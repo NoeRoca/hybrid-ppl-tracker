@@ -376,7 +376,7 @@ function puLogTotal(l){ if(l.day==="pyramid")return (l.ladders||[]).reduce((a,x)
 
 /* ================= VIEWS ================= */
 let session=migrateDraft(lsGet("hybrid-ppl-draft")), tab="today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
-let psub="overview", liftSel="", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null, editHeight=false, progDay=null;
+let psub="overview", liftSel="", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null, editHeight=false, progDay=null, progFrom=false;
 const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
 const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine",run:"Log a run",pullup:"Pull-ups"};
 function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${(tab==="routine"||tab==="run"||tab==="pullup"?"today":tab)===k?"on":""}">${n}</button>`).join("")}
@@ -556,7 +556,7 @@ function viewSession(){
   const warm=[...WARM[k],...WARM.all];
   return `<div class="stack">
   <div class="row between"><div class="row">${plate(k)}<span class="muted small">Started ${new Date(session.started).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</span></div>
-  <button class="btn sm ghost" data-a="cancel-session">${confirmKey==="cancel"?"Tap again to discard":"Discard"}</button></div>
+  <span class="row" style="gap:6px"><button class="btn sm" data-a="prog-from-session">Program</button><button class="btn sm ghost" data-a="cancel-session">${confirmKey==="cancel"?"Tap again to discard":"Discard"}</button></span></div>
   ${pu.due?`<div class="card edge" style="--c:var(--pu)"><div class="row between"><div><span class="eyebrow">First</span><h3>Pull-ups: ${PU_DAYS[S.pu.next].name}</h3></div><button class="btn sm" data-a="pu-open">Log it</button></div>${k==="pull"?'<div class="muted small">No pulldowns or extra pull-ups today; the program covers vertical pulling.</div>':""}</div>`:""}
   <details class="card"><summary>Warm-up ideas</summary><ul class="muted small" style="margin:8px 0 0;padding-left:18px">${warm.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></details>
   ${session.order.map(id=>slotCard(k,id)).join("")||'<div class="hint">Nothing here yet. Add your first exercise when you start it.</div>'}
@@ -990,7 +990,7 @@ function viewPrograms(){
 function viewMore(){
   if(moreSub==="measure")return `<div class="stack">${backBtn()}${viewMeasure()}</div>`;
   if(moreSub==="records")return `<div class="stack">${backBtn()}${viewRecords()}</div>`;
-  if(moreSub==="program")return `<div class="stack">${progDay?`<div><button class="btn sm ghost" data-a="prog-day" data-k="">‹ All programs</button></div>`:backBtn()}${viewPrograms()}</div>`;
+  if(moreSub==="program")return `<div class="stack">${progDay?`<div><button class="btn sm ghost" data-a="${progFrom?"back-session":"prog-day"}" data-k="">${progFrom?"‹ Back to session":"‹ All programs"}</button></div>`:backBtn()}${viewPrograms()}</div>`;
   if(moreSub==="log")return `<div class="stack">${backBtn()}${viewLog()}</div>`;
   if(moreSub==="backup")return `<div class="stack">${backBtn()}${backupCard()}</div>`;
   const w=lastOf("weight");
@@ -1025,15 +1025,17 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-a]");if(!b||b.tagName==="SELECT")return;const a=b.dataset.a;
   if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&a!=="item-rm"&&a!=="load-prog"&&a!=="fresh"&&a!=="fresh-menu"&&!a.startsWith("del"))confirmKey=null;
   switch(a){
-    case "tab":if(b.dataset.k==="more")moreSub=null;tab=b.dataset.k;render();window.scrollTo(0,0);break;
+    case "tab":progFrom=false;if(b.dataset.k==="more")moreSub=null;tab=b.dataset.k;render();window.scrollTo(0,0);break;
     case "noop":break;
+    case "prog-from-session":{const d=PROGRAMS.days.find(x=>x.name===session.day)||PROGRAMS.days.find(x=>x.split===session.split);progDay=d.id;progFrom=true;pick=null;tab="more";moreSub="program";render();window.scrollTo(0,0);break}
+    case "back-session":progFrom=false;tab="session";render();window.scrollTo(0,0);break;
     case "prog-nav":progNav(+b.dataset.d);break;
     case "fresh":if(confirmKey==="fresh"){freshStart()}else{confirmKey="fresh";render()}break;
     case "fresh-menu":if(confirmKey==="fresh"){freshStart()}else{confirmKey="fresh";render()}break;
     case "fresh-no":S.flags.freshAsked=true;saveState();confirmKey=null;render();break;
     case "prog-day":progDay=b.dataset.k||null;confirmKey=null;render();window.scrollTo(0,0);break;
     case "load-prog":{const id=b.dataset.k;if(session&&confirmKey!=="load-"+id){confirmKey="load-"+id;render();break}loadProgramDay(id);break}
-    case "more-go":moreSub=b.dataset.k||null;progDay=null;render();window.scrollTo(0,0);break;
+    case "more-go":moreSub=b.dataset.k||null;progDay=null;progFrom=false;render();window.scrollTo(0,0);break;
     case "pick-open":pick={cat:catOrder(session.split)[0]};render();break;
     case "pick-close":pick=null;render();break;
     case "pick-cat":pick.cat=b.dataset.k;render();break;
@@ -1169,7 +1171,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v18"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v19"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
