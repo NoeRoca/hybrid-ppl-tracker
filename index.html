@@ -425,19 +425,20 @@ function calCard(){
   for(let d=1;d<=dim;d++){
     const ds=`${m.getFullYear()}-${pad(m.getMonth()+1)}-${pad(d)}`,tr=t[ds],ro=r[ds],pu=p[ds];
     let c="d";
-    if(ds>td)c+=" future";else if(tr&&ro){c+=" full";full++}
+    const restDone=ro&&!tr&&ds<td;
+    if(ds>td)c+=" future";else if((tr&&ro)||restDone){c+=" full";full++}
     if(ds===td)c+=" today";
     if(ds===selDay)c+=" sel";
     const rest=ds<td&&ds>=first&&!tr&&!pu;
-    const sty=ds>td?"":`${tr?"--s:var(--accent);":""}${ro?"--r:var(--home);":""}${pu?"--fill:color-mix(in srgb,var(--pull) 38%,var(--surface));":rest?"--fill:color-mix(in srgb,var(--muted) 24%,var(--surface));":""}`;
+    const sty=ds>td?"":`${tr?"--s:var(--accent);":restDone?"--s:var(--muted);":""}${ro?"--r:var(--home);":""}${pu?"--fill:color-mix(in srgb,var(--pull) 38%,var(--surface));":rest?"--fill:color-mix(in srgb,var(--muted) 24%,var(--surface));":""}`;
     cells+=`<button class="${c}" style="${sty}" data-a="day" data-k="${ds}" aria-label="${ds}${tr?", trained":""}${pu?", pull-ups":""}${ro?", routine done":""}">${d}</button>`;
   }
   return `<section class="card">
-    <div class="row between"><div class="row"><button class="btn sm ghost" data-a="cal" data-d="-1" aria-label="Previous month">‹</button><h2>${m.toLocaleDateString("en-GB",{month:"long",year:"numeric"})}</h2><button class="btn sm ghost" data-a="cal" data-d="1" aria-label="Next month" ${calOff>=0?"disabled":""}>›</button></div><span class="muted small">${full} session + routine</span></div>
+    <div class="row between"><div class="row"><button class="btn sm ghost" data-a="cal" data-d="-1" aria-label="Previous month">‹</button><h2>${m.toLocaleDateString("en-GB",{month:"long",year:"numeric"})}</h2><button class="btn sm ghost" data-a="cal" data-d="1" aria-label="Next month" ${calOff>=0?"disabled":""}>›</button></div><span class="muted small">${full} complete days</span></div>
     <div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
     <div class="cal">${cells}</div>
     ${selDay?dayDetail(selDay):""}
-    <div class="legend small muted"><span><i style="background:var(--accent)"></i>Session or run</span><span><i style="background:var(--home)"></i>Home routine</span><span><i style="background:color-mix(in srgb,var(--pull) 55%,var(--surface))"></i>Pull-ups</span><span><i style="background:color-mix(in srgb,var(--muted) 45%,var(--surface))"></i>Rest day</span></div>
+    <div class="legend small muted"><span><i style="background:var(--accent)"></i>Session or run</span><span><i style="background:var(--home)"></i>Home routine</span><span><i style="background:color-mix(in srgb,var(--pull) 55%,var(--surface))"></i>Pull-ups</span><span><i style="background:var(--muted)"></i>Rest day (routine done = complete)</span></div>
   </section>`;
 }
 function sheetView(){
@@ -1128,7 +1129,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v15"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v16"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
