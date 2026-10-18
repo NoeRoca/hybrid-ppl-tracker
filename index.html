@@ -140,7 +140,7 @@ const ORDER=["push","pull","legs"];
 const L=(n,k)=>({n,k}); // option with kind override
 const PROGRAM = {
   warmup:[
-    ["Band pull-aparts","2 × 15"],["Wall angels","1 × 10"],["Chin tucks","1 × 10"],
+    ["Band pull-aparts","2 × 15"],
     ["Scapular pull-ups","1 × 10"],["Wrist circles and floor rocks","1 min"]
   ],
   push:[
@@ -155,6 +155,7 @@ const PROGRAM = {
     {id:"grip",label:"Grip",kind:"hold",sets:2,range:"near max",rest:90,opts:["Thick-bar hang"]},
   ],
   pull:[
+    {id:"skill",label:"Skill",kind:"skill",skill:"handstand"},
     {id:"r1",label:"Row 1",kind:"lift",sets:3,range:"8–10",lo:8,hi:10,rest:120,opts:["Chest-supported row","Barbell row","T-bar row"]},
     {id:"r2",label:"Row 2",kind:"lift",sets:3,range:"10–12",lo:10,hi:12,rest:90,opts:["One-arm cable row","One-arm dumbbell row","Seated cable row"]},
     {id:"fp",label:"Face pulls",kind:"lift",sets:3,range:"15",lo:15,hi:15,rest:60,opts:["Face pull"]},
@@ -178,13 +179,14 @@ const PROGRAM = {
     {id:"oah",label:"One-arm hangs",kind:"hold",sets:3,side:true,range:"3 per side",rest:60,opts:["One-arm dead hang"]},
   ],
   home:[
+    {id:"wangel",n:"Wall angels",dose:"1 × 10",why:"Upper back and shoulder posture. Back, head and hips against the wall, slide the arms up and down.",t:0},
+    {id:"chin",n:"Chin tucks",dose:"1 × 10",why:"Neck posture. Draw the chin straight back, hold 2 s each rep.",t:0},
     {id:"couch",n:"Couch stretch",dose:"2 × 45 s per side",why:"Hip flexors and quads. Knee against the wall, squeeze the glute of the back leg.",t:45},
     {id:"9090",n:"90/90 hip switches",dose:"10 slow switches + 30 s hold per side",why:"Hip rotation both ways. Lean your chest over the front shin for the hold.",t:30},
     {id:"pigeon",n:"Pigeon stretch",dose:"2 × 45 s per side",why:"Glutes and hip rotators. Figure-4 on your back if pigeon hurts the knee.",t:45},
     {id:"frog",n:"Frog stretch / adductor rock-backs",dose:"10 rocks + 30 s hold",why:"Inner thighs: the pelvis opening the doctor asked for.",t:30},
     {id:"squat",n:"Deep squat hold",dose:"2 × 60 s",why:"Hips and ankles together. Hold a door frame, heels down.",t:60},
     {id:"deadbug",n:"Dead bug",dose:"2 × 8 per side",why:"Lower back flat on the floor the whole time: posterior pelvic tilt control.",t:0},
-    {id:"hs",n:"Chest-to-wall handstand",dose:"handstand",why:"Handstand practice. Belly to the wall, hands 10–20 cm out, push the floor away.",t:0},
   ]
 };
 const SKILLS = {
@@ -331,7 +333,7 @@ function viewToday(){
   ${session?`<section class="card edge" style="--c:${cvar(session.split)}"><div class="row between"><div><span class="eyebrow">In progress</span><h3>${SPLITS[session.split].name} session</h3></div><button class="btn primary ${session.split==="legs"?"legs":""}" style="--c:${cvar(session.split)}" data-a="resume">Resume</button></div></section>`:""}
   <section class="card edge" style="--c:${cvar(nx)}">
     <div class="row between"><span class="eyebrow">Next in rotation</span>${!ready?'<span class="pill">Loading</span>':""}</div>
-    <div class="row" style="gap:14px">${plate(nx)}<div><div class="big">${sp.name}</div><div class="muted small">Warm-up, ${PROGRAM[nx].length} slots${nx==="push"?", planche first":nx==="legs"?", front lever first":""}</div></div></div>
+    <div class="row" style="gap:14px">${plate(nx)}<div><div class="big">${sp.name}</div><div class="muted small">Warm-up, ${PROGRAM[nx].length} slots${nx==="push"?", planche first":nx==="legs"?", front lever first":nx==="pull"?", handstand first":""}</div></div></div>
     <div class="row"><button class="btn primary ${nx==="legs"?"legs":""}" style="--c:${cvar(nx)}" data-a="start" data-k="${nx}" ${ready?"":"disabled"}>Start ${sp.name}</button>
     ${ORDER.filter(k=>k!==nx).map(k=>`<button class="btn ghost sm" data-a="start" data-k="${k}" ${ready?"":"disabled"}>Do ${SPLITS[k].name} instead</button>`).join("")}</div>
   </section>
@@ -522,7 +524,7 @@ function viewSkills(){
   <div class="seg" role="group" aria-label="Priority skill">${Object.keys(SKILLS).map(k=>`<button class="${S.priority===k?"on":""}" data-a="prio" data-k="${k}">${SKILLS[k].name}</button>`).join("")}</div>
   <div class="muted small">Priority: 6 holds per session and strict progression. Maintenance: 3 holds, no pressure. Switch every 6–8 weeks.</div></section>
   ${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],lv=SKILLS[k].levels,t=holdTarget(k);
-    const where=k==="planche"?"Push day":k==="frontlever"?"Legs day":"Home routine";
+    const where=k==="planche"?"Push day":k==="frontlever"?"Legs day":"Pull day";
     return `<section class="card"><div class="row between"><h3>${SKILLS[k].name}</h3><span class="pill">${S.priority===k?"Priority":"Maintenance"} · ${where}</span></div>
     <div class="row between"><span class="muted">Level</span><b>${lv[sk.level]}</b></div>
     <div class="row between"><span class="muted">Best test</span><b>${sk.baseline?sk.baseline+" s":"Not tested"}</b></div>
