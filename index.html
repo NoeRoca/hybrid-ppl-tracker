@@ -104,13 +104,28 @@ details summary{cursor:pointer;font-weight:600}
 .dot{width:12px;height:12px;border-radius:50%;background:var(--c);flex:none;margin-top:5px}
 
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px))}
-nav.tabs .in{max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
+nav.tabs .in{max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr)}
 nav.tabs button{border:0;background:none;padding:10px 2px 12px;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);cursor:pointer;border-top:3px solid transparent}
 nav.tabs button.on{color:var(--ink);border-top-color:var(--ink)}
 .timer{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:7;background:var(--ink);color:var(--bg);border-radius:999px;padding:8px 8px 8px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 6px 20px rgb(0 0 0 / .25);max-width:calc(100% - 32px)}
 .timer b{font-family:var(--display);font-size:24px;min-width:64px}
 .timer button{background:var(--bg);color:var(--ink);border:0;border-radius:999px;padding:6px 12px;font-weight:600;cursor:pointer}
 .toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(12px + env(safe-area-inset-top,0px));z-index:9;background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:8px;font-weight:600;font-size:14px;max-width:calc(100% - 32px)}
+.streak{font-family:var(--display);font-weight:700;font-size:34px;line-height:1;text-align:right}
+.dow,.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center}
+.dow{font-family:var(--display);font-weight:600;font-size:12px;letter-spacing:.08em;color:var(--muted)}
+.cal .d{aspect-ratio:1;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:600;border:2px solid var(--line);color:var(--muted)}
+.cal .d.full{background:var(--home);border-color:var(--home);color:var(--on-accent)}
+.cal .d.half{border-color:var(--home);color:var(--ink);background:conic-gradient(var(--home) 0 50%,transparent 0)}
+.cal .d.half span{background:var(--surface);border-radius:50%;width:70%;height:70%;display:grid;place-items:center}
+.cal .d.today{outline:2px solid var(--ink);outline-offset:2px}
+.cal .d.future{opacity:.4}
+.legend{display:flex;gap:14px;flex-wrap:wrap}.legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid var(--home);vertical-align:-2px;margin-right:5px}
+.btn.big{background:var(--ink);color:var(--bg);border:0;min-height:56px;font-size:18px;font-family:var(--display);text-transform:uppercase;letter-spacing:.03em;width:100%}
+.bar{height:8px;background:var(--sunk);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--home)}
+.sheet{position:fixed;inset:0;z-index:8;background:rgb(0 0 0 / .5);display:flex;align-items:flex-end}
+.sheet>div{background:var(--surface);width:100%;max-width:640px;margin:0 auto;border-radius:16px 16px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:10px}
+.btn.opt{display:flex;align-items:center;justify-content:space-between;text-align:left;border-left:6px solid var(--c);min-height:48px}
 @media (prefers-reduced-motion:no-preference){.card{transition:border-color .15s}}
 </style>
 </head>
@@ -308,8 +323,10 @@ function puLogTotal(l){ if(l.day==="pyramid")return (l.ladders||[]).reduce((a,x)
 
 /* ================= VIEWS ================= */
 let session=lsGet("hybrid-ppl-draft")||null, tab=session?"session":"today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
-const TABS=[["today","Today"],["pullups","Pull-ups"],["home","Home"],["skills","Skills"],["log","Log"]];
-function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${tab===k?"on":""}">${n}</button>`).join("")}
+let psub="pullups", calOff=0, sheet=false;
+const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
+const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine"};
+function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${(tab==="routine"?"today":tab)===k?"on":""}">${n}</button>`).join("")}
 
 function render(){
   renderTabs();
@@ -318,46 +335,81 @@ function render(){
   const m=$("#main");
   if(session&&tab==="session"){ $("#hdr-title").textContent=SPLITS[session.split].name+" session"; m.innerHTML=viewSession(); return; }
   if(tab==="session")tab="today";
-  $("#hdr-title").textContent=TABS.find(t=>t[0]===tab)[1];
-  m.innerHTML=({today:viewToday,pullups:viewPullups,home:viewHome,skills:viewSkills,log:viewLog})[tab]();
+  $("#hdr-title").textContent=TITLES[tab];
+  m.innerHTML=({today:viewToday,progress:viewProgress,more:viewMore,routine:viewRoutine})[tab]();
 }
 
 function plate(k){const s=SPLITS[k];return `<div class="plate ${k==="legs"?"legs":""}" style="--c:${cvar(k)}" aria-hidden="true"><span>${s.plate}</span></div>`}
 
+function dayMap(){const t={},r={};for(const l of LOGS){if(l.type==="session"||l.type==="run"||l.type==="pullup")t[l.date]=1;else if(l.type==="home"&&(l.done||[]).length>=PROGRAM.home.length)r[l.date]=1}return{t,r}}
+function streakDays(){
+  const {t,r}=dayMap(),d=new Date();let n=0;
+  if(!t[dstr(d)]&&!r[dstr(d)])d.setDate(d.getDate()-1);
+  while(t[dstr(d)]||r[dstr(d)]){n++;d.setDate(d.getDate()-1)}
+  return n;
+}
+function calCard(){
+  const now=new Date(),m=new Date(now.getFullYear(),now.getMonth()+calOff,1);
+  const lead=(m.getDay()+6)%7,dim=new Date(m.getFullYear(),m.getMonth()+1,0).getDate(),{t,r}=dayMap(),td=today();
+  let cells="",full=0;
+  for(let i=0;i<lead;i++)cells+="<div></div>";
+  for(let d=1;d<=dim;d++){
+    const ds=`${m.getFullYear()}-${pad(m.getMonth()+1)}-${pad(d)}`,tr=t[ds],ro=r[ds];
+    let c="d";
+    if(ds>td)c+=" future";else if(tr&&ro){c+=" full";full++}else if(tr||ro)c+=" half";
+    if(ds===td)c+=" today";
+    cells+=`<div class="${c}" aria-label="${ds}${tr?", trained":""}${ro?", routine done":""}">${c.includes("half")?`<span>${d}</span>`:d}</div>`;
+  }
+  return `<section class="card">
+    <div class="row between"><div class="row"><button class="btn sm ghost" data-a="cal" data-d="-1" aria-label="Previous month">‹</button><h2>${m.toLocaleDateString("en-GB",{month:"long",year:"numeric"})}</h2><button class="btn sm ghost" data-a="cal" data-d="1" aria-label="Next month" ${calOff>=0?"disabled":""}>›</button></div><span class="muted small">${full} full day${full===1?"":"s"}</span></div>
+    <div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+    <div class="cal">${cells}</div>
+    <div class="legend small muted"><span><i style="background:var(--home)"></i>Session + routine</span><span><i style="background:conic-gradient(var(--home) 0 50%,transparent 0)"></i>One of them</span><span><i></i>Nothing</span></div>
+  </section>`;
+}
+function sheetView(){
+  const order=[S.nextSplit,...ORDER.filter(k=>k!==S.nextSplit)];
+  return `<div class="sheet" data-a="sheet-close"><div data-a="noop">
+    <h2>What did you do?</h2>
+    ${order.map((k,i)=>`<button class="btn opt" style="--c:${cvar(k)}" data-a="start" data-k="${k}"><b>${SPLITS[k].name}</b><span class="muted small">${i===0?"next in rotation":""}</span></button>`).join("")}
+    <button class="btn opt" style="--c:var(--warn)" data-a="sheet-run"><b>Run</b><span class="muted small">log distance and time</span></button>
+    <button class="btn" data-a="sheet-close">Cancel</button>
+  </div></div>`;
+}
 function viewToday(){
-  const nx=S.nextSplit, sp=SPLITS[nx], pu=puSummary(), h=homeLog(), run=lastOf("run");
+  const nx=S.nextSplit, sp=SPLITS[nx], pu=puSummary(), h=homeLog(), n=h?.done?.length||0, tot=PROGRAM.home.length;
   const needTests=["planche","frontlever","handstand"].filter(k=>!S.skills[k].baseline);
   const puNext=PU_DAYS[S.pu.next];
   const puTarget=S.pu.next==="density"?`10 × ${S.pu.densityTarget}`:S.pu.next==="pyramid"?`5 ladders, peak ${S.pu.ladderPeak}`:"3 max sets";
+  const st=streakDays();
   return `<div class="stack">
+  <div class="row between"><span class="eyebrow">Keep the chain going</span><div><div class="streak">${st}</div><div class="eyebrow">day streak</div></div></div>
+  ${calCard()}
   ${session?`<section class="card edge" style="--c:${cvar(session.split)}"><div class="row between"><div><span class="eyebrow">In progress</span><h3>${SPLITS[session.split].name} session</h3></div><button class="btn primary ${session.split==="legs"?"legs":""}" style="--c:${cvar(session.split)}" data-a="resume">Resume</button></div></section>`:""}
-  <section class="card edge" style="--c:${cvar(nx)}">
-    <div class="row between"><span class="eyebrow">Next in rotation</span>${!ready?'<span class="pill">Loading</span>':""}</div>
-    <div class="row" style="gap:14px">${plate(nx)}<div><div class="big">${sp.name}</div><div class="muted small">Warm-up, ${PROGRAM[nx].length} slots${nx==="push"?", planche first":nx==="legs"?", front lever first":nx==="pull"?", handstand first":""}</div></div></div>
-    <div class="row"><button class="btn primary ${nx==="legs"?"legs":""}" style="--c:${cvar(nx)}" data-a="start" data-k="${nx}" ${ready?"":"disabled"}>Start ${sp.name}</button>
-    ${ORDER.filter(k=>k!==nx).map(k=>`<button class="btn ghost sm" data-a="start" data-k="${k}" ${ready?"":"disabled"}>Do ${SPLITS[k].name} instead</button>`).join("")}</div>
-  </section>
-
-  <section class="card edge" style="--c:var(--pull)">
-    <div class="row between"><span class="eyebrow">Pull-up program</span>${pu.due?'<span class="pill due" style="--c:var(--pull)">Due today</span>':`<span class="pill">Next in ${2-pu.d} day${2-pu.d>1?"s":""}</span>`}</div>
-    <div class="row between"><div><h3>${puNext.name}</h3><div class="muted small">${puTarget} · do it first in the session</div></div>
-    <button class="btn sm" data-a="tab" data-k="pullups">Open</button></div>
-  </section>
-
+  <button class="btn big" data-a="sheet-open" ${ready?"":"disabled"}>Start session</button>
+  <div class="row" style="flex-wrap:nowrap"><button class="btn" style="flex:1" data-a="psub-go" data-k="runs">Log a run</button></div>
   <section class="card edge" style="--c:var(--home)">
     <div class="row between"><span class="eyebrow">Home routine</span><span class="pill">${weekHomeDays()}/7 days this week</span></div>
-    <div class="row between"><div><h3>${(h?.done?.length||0)}/${PROGRAM.home.length} done today</h3><div class="muted small">About 15 min · hips first</div></div>
-    <button class="btn sm" data-a="tab" data-k="home">Open</button></div>
+    <div class="row between"><h3>${n}/${tot} done today</h3><button class="btn sm" data-a="tab" data-k="routine">Open</button></div>
+    <div class="bar"><i style="width:${Math.round(n/tot*100)}%"></i></div>
+    <div class="muted small">Tick items one by one. About 15 min · hips first</div>
   </section>
-
-  ${needTests.length?`<section class="card"><span class="eyebrow">Baseline tests</span><p style="margin:0">Not tested yet: ${needTests.map(k=>SKILLS[k].name).join(", ")}${S.hang.L==null?", one-arm hang":""}. Hold targets are set at about 70% of your test.</p><div><button class="btn sm" data-a="tab" data-k="skills">Go to tests</button></div></section>`:""}
-
-  <section class="card">
-    <div class="row between"><span class="eyebrow">Running</span><span class="pill">${run?`Last run ${run.km} km, ${daysSince(run.date)} d ago`:"No runs logged"}</span></div>
-    ${runAdvice()}
-    <div><button class="btn sm" data-a="tab" data-k="log">Log a run</button></div>
+  <section class="card edge" style="--c:${cvar(nx)}">
+    <span class="eyebrow">Up next</span>
+    <div class="row" style="gap:14px">${plate(nx)}<div><h3>${sp.name} day${nx==="push"?" · planche first":nx==="legs"?" · front lever first":nx==="pull"?" · handstand first":""}</h3>
+    <div class="muted small">${pu.due?`Pull-ups first: ${puNext.name}, ${puTarget}`:`Pull-ups in ${2-pu.d} day${2-pu.d>1?"s":""} (${puNext.name})`}</div></div></div>
   </section>
+  ${needTests.length?`<section class="card"><span class="eyebrow">Baseline tests</span><p style="margin:0">Not tested yet: ${needTests.map(k=>SKILLS[k].name).join(", ")}${S.hang.L==null?", one-arm hang":""}. Hold targets are set at about 70% of your test.</p><div><button class="btn sm" data-a="psub-go" data-k="skills">Go to tests</button></div></section>`:""}
+  ${sheet?sheetView():""}
   </div>`;
+}
+function viewRoutine(){
+  return `<div class="stack"><div><button class="btn sm ghost" data-a="tab" data-k="today">‹ Back to Home</button></div>${viewHome()}</div>`;
+}
+function viewProgress(){
+  const subs=[["pullups","Pull-ups"],["skills","Skills"],["runs","Runs"],["log","Log"]];
+  const body=({pullups:viewPullups,skills:viewSkills,runs:viewRuns,log:viewLog})[psub]();
+  return `<div class="stack"><div class="seg" role="group" aria-label="Progress sections">${subs.map(([k,n])=>`<button class="${psub===k?"on":""}" data-a="psub" data-k="${k}">${n}</button>`).join("")}</div>${body}</div>`;
 }
 function runAdvice(){
   const run=lastOf("run");const gap=run?daysSince(run.date):null;
@@ -437,7 +489,7 @@ function skillSlot(k,sl,st){
     <div class="row between"><span class="eyebrow">Skill · ${prio?"priority":"maintenance"}</span><span class="dose">${st.sets.length} × ${t} s</span></div>
     <h3>${name}: ${lvl}</h3>
     <div class="muted small">Holds at about 70% of your ${sk.baseline} s test. 2 min rest. Stop a hold when form breaks.</div>
-    ${t>=10?`<div class="hint good">Target is ${t} s. Time to test ${SKILLS[key].levels[sk.level+1]||"a harder variation"} (Skills tab).</div>`:""}
+    ${t>=10?`<div class="hint good">Target is ${t} s. Time to test ${SKILLS[key].levels[sk.level+1]||"a harder variation"} (Progress, then Skills).</div>`:""}
     <div class="sets">${rows}</div>
     <div class="row"><button class="btn sm" data-a="rest" data-s="120">Rest 2:00</button><button class="btn sm" data-a="hold-timer" data-s="${t}">Hold timer ${t} s</button><a class="link" href="${demo(name+" "+lvl)}" target="_blank" rel="noopener">Watch demo ↗</a></div>
   </section>`;
@@ -539,8 +591,8 @@ function viewSkills(){
 }
 
 /* ---------- Log ---------- */
-function viewLog(){
-  const items=LOGS.slice(0,80).map(l=>{
+function histCard(list,title){
+  const items=list.slice(0,80).map(l=>{
     let c="--muted",title="",detail="";
     if(l.type==="session"){c=SPLITS[l.split].c;title=SPLITS[l.split].name;detail=(l.items||[]).map(i=>`${i.ex}: ${fmtSets(i)}`).join(" · ")}
     else if(l.type==="pullup"){c="--pull";title="Pull-ups · "+PU_DAYS[l.day].name;detail=l.day==="pyramid"?l.ladders.map(x=>`${x.peak}${x.clean?"":"✗"}`).join(" / ")+` = ${puLogTotal(l)} reps`:`${l.sets.join(" · ")} = ${puLogTotal(l)} reps`;if(l.note)detail+=" · "+l.note}
@@ -548,18 +600,22 @@ function viewLog(){
     else if(l.type==="run"){c="--warn";title=`Run · ${l.km} km`;detail=[l.min?`${l.min} min`:"",l.shin?"shins hurt":"",l.note||""].filter(Boolean).join(" · ")}
     else if(l.type==="test"){c="--muted";title=`Test · ${l.skill}`;detail=`${l.level}: ${l.seconds} s`}
     return `<div class="logitem"><span class="dot" style="--c:var(${c})"></span><div style="min-width:0;flex:1"><div class="row between"><b>${esc(title)}</b><span class="muted small">${fmtDate(l.date)}${l.approx?" (approx.)":""}</span></div><div class="muted small" style="overflow-wrap:anywhere">${esc(detail)}</div></div>${l.seed||l.id.startsWith("seed")?"":`<button class="btn sm ghost" data-a="del" data-id="${l.id}" aria-label="Delete entry">${confirmKey==="del-"+l.id?"Confirm":"✕"}</button>`}</div>`}).join("<hr>");
-  return `<div class="stack">
-  <section class="card"><span class="eyebrow">Log a run</span>
+  return `<section class="card"><span class="eyebrow">${title}</span>${items||'<p class="muted">Nothing logged yet.</p>'}</section>`;
+}
+function runCard(){
+  return `<section class="card"><span class="eyebrow">Log a run</span>
   <div class="row" style="flex-wrap:nowrap"><input type="date" id="run-date" data-f="run" data-k="date" value="${esc(runDraft.date)}"><input type="number" inputmode="decimal" placeholder="km" id="run-km" data-f="run" data-k="km" value="${esc(runDraft.km)}"><input type="number" inputmode="numeric" placeholder="min" id="run-min" data-f="run" data-k="min" value="${esc(runDraft.min)}"></div>
   <div class="row"><button class="btn sm ${runDraft.shin?"primary":""}" style="--c:var(--warn)" data-a="run-shin">${runDraft.shin?"Shins hurt":"Shins fine"}</button><input type="text" placeholder="Note (optional)" id="run-note" data-f="run" data-k="note" value="${esc(runDraft.note)}" style="flex:1"></div>
   ${runAdvice()}
-  <div><button class="btn primary" style="--c:var(--ink)" data-a="run-save" ${ready?"":"disabled"}>Save run</button></div></section>
-  <section class="card"><span class="eyebrow">History</span>${items||'<p class="muted">Nothing logged yet.</p>'}</section>
-  <section class="card"><span class="eyebrow">Backup</span><div class="muted small">Everything is stored on this phone, works without signal, and is not synced anywhere else. Export a backup now and then (Files, iCloud, email to yourself).</div>
+  <div><button class="btn primary" style="--c:var(--ink)" data-a="run-save" ${ready?"":"disabled"}>Save run</button></div></section>`;
+}
+function viewRuns(){return `<div class="stack">${runCard()}${histCard(LOGS.filter(l=>l.type==="run"),"Run history")}</div>`}
+function viewLog(){return `<div class="stack">${histCard(LOGS,"History")}</div>`}
+function viewMore(){
+  return `<div class="stack"><section class="card"><span class="eyebrow">Backup</span><div class="muted small">Everything is stored on this phone, works without signal, and is not synced anywhere else. Export a backup now and then (Files, iCloud, email to yourself).</div>
   <div class="row"><button class="btn sm" data-a="download">Download backup</button><button class="btn sm" data-a="export">${showExport?"Hide JSON":"Show JSON"}</button><button class="btn sm" data-a="import-toggle">${showImport?"Close import":"Import backup"}</button></div>
   ${showExport?`<textarea id="export-box" readonly>${esc(JSON.stringify({state:S,logs:LOGS},null,1))}</textarea><div><button class="btn sm" data-a="copy-export">Copy</button></div>`:""}
-  ${showImport?`<div class="muted small">Pick a backup file or paste its JSON. This replaces everything on this phone.</div><input type="file" id="import-file" accept=".json,application/json"><textarea id="import-box" data-f="import" placeholder="Or paste JSON here">${esc(importText)}</textarea><div><button class="btn sm primary" style="--c:var(--warn)" data-a="import-go">${confirmKey==="import"?"Tap again to replace all data":"Replace data with this backup"}</button></div>`:""}</section>
-  </div>`;
+  ${showImport?`<div class="muted small">Pick a backup file or paste its JSON. This replaces everything on this phone.</div><input type="file" id="import-file" accept=".json,application/json"><textarea id="import-box" data-f="import" placeholder="Or paste JSON here">${esc(importText)}</textarea><div><button class="btn sm primary" style="--c:var(--warn)" data-a="import-go">${confirmKey==="import"?"Tap again to replace all data":"Replace data with this backup"}</button></div>`:""}</section></div>`;
 }
 
 /* ================= EVENTS ================= */
@@ -585,12 +641,19 @@ document.addEventListener("click",async e=>{
   if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&!a.startsWith("del"))confirmKey=null;
   switch(a){
     case "tab":tab=b.dataset.k;render();window.scrollTo(0,0);break;
+    case "noop":break;
+    case "psub":psub=b.dataset.k;render();break;
+    case "psub-go":tab="progress";psub=b.dataset.k;render();window.scrollTo(0,0);break;
+    case "cal":calOff=Math.min(0,calOff+ +b.dataset.d);render();break;
+    case "sheet-open":sheet=true;render();break;
+    case "sheet-close":sheet=false;render();break;
+    case "sheet-run":sheet=false;tab="progress";psub="runs";render();window.scrollTo(0,0);break;
     case "resume":tab="session";render();window.scrollTo(0,0);break;
     case "timer-stop":clearInterval(tInt);tInt=null;$("#timer").hidden=true;break;
     case "timer-add":tEnd=Math.max(tEnd,Date.now())+30000;if(!tInt)tInt=setInterval(tick,250);tick();break;
     case "rest":startTimer(+b.dataset.s,"Rest");break;
     case "hold-timer":startTimer(+b.dataset.s,"Hold");break;
-    case "start":if(session&&confirmKey!=="start"){confirmKey="start";toast("A session is in progress. Tap Start again to replace it.");break}confirmKey=null;session=newSession(b.dataset.k);tab="session";saveDraft();render();window.scrollTo(0,0);break;
+    case "start":if(session&&confirmKey!=="start"){confirmKey="start";toast("A session is in progress. Tap Start again to replace it.");break}confirmKey=null;sheet=false;session=newSession(b.dataset.k);tab="session";saveDraft();render();window.scrollTo(0,0);break;
     case "cancel-session":if(confirmKey==="cancel"){session=null;confirmKey=null;tab="today";try{localStorage.removeItem("hybrid-ppl-draft")}catch{};render()}else{confirmKey="cancel";render()}break;
     case "warm":{const i=+b.dataset.i,w=session.warm;w.includes(i)?w.splice(w.indexOf(i),1):w.push(i);saveDraft();render();break}
     case "set-done":{const st=session.slots[b.dataset.slot].sets[+b.dataset.i];st.done=!st.done;saveDraft();render();
@@ -600,7 +663,7 @@ document.addEventListener("click",async e=>{
     case "skill-test":{const k=b.dataset.k,v=num($("#test-"+k).value);if(!v){toast("Enter your hold in seconds");break}
       await saveTest(k,v);session.slots[b.dataset.slot]=newSession(session.split).slots[b.dataset.slot];saveDraft();render();toast(`Saved. Target: ${holdCount(k)} × ${holdTarget(k)} s`);break}
     case "finish":await finishSession();break;
-    case "pu-open":tab="pullups";render();window.scrollTo(0,0);toast("Session kept. Resume it from Today.");break;
+    case "pu-open":tab="progress";psub="pullups";render();window.scrollTo(0,0);toast("Session kept. Resume it from Home.");break;
     case "pu-den-done":{const s=puDraft.sets[+b.dataset.i];s.done=!s.done;render();if(s.done)startTimer(60,"Rest");break}
     case "pu-pyr-clean":{const x=puDraft.ladders[+b.dataset.i];x.clean=!x.clean;render();break}
     case "pu-pyr-done":{const x=puDraft.ladders[+b.dataset.i];x.done=!x.done;render();break}
