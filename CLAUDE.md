@@ -53,5 +53,8 @@ Priority focus on hip and pelvis mobility, posture (upper back, neck) and shin c
 ### Running
 Irregular, 8–15 km when he runs. Big runs after long gaps are a common shin-splint trigger, so the app suggests ~5–6 km after more than a week off. Keep that logic.
 
+### App structure
+Home (calendar rings: pink/green halves for session-or-run and home routine, blue shading for pull-ups, grey shading for rest days; Start session picker incl. Pull-ups and Run; pull-up card), Progress = analytics only (Overview, Pull-ups, Skills, Lifts, Body, all offline SVG charts), More = menu (Measurements, Programs, Records incl. priority skill, Activity log, Backup). Pull-up logging lives on its own screen reached from Home or the session picker.
+
 ### Metrics
 More tab is a settings-style menu: Measurements (dated weight history, height), Records (skill holds per level with dates, one-arm hang, lift bests with estimated 1RM; a new skill record resets the hold target to 70%), Backup. These replace the old home-screen baseline card.

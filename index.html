@@ -158,9 +158,12 @@ nav.tabs{background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-f
 nav.tabs button{font-family:var(--body);font-weight:700;font-size:12px;letter-spacing:.04em}
 nav.tabs button.on{color:var(--ink);border-top-color:var(--accent)}
 .sheet>div{border-radius:24px 24px 0 0}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--sunk);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:2px}
+.stat b{font:800 26px/1.1 var(--display);letter-spacing:-.02em}
 .badge{font-weight:800;font-size:13px;padding:2px 8px;border-radius:99px;background:var(--sunk)}
 .badge.E{color:var(--ok)}.badge.J{color:var(--muted)}
-.cal button.d{border:0;color:var(--muted);background:radial-gradient(circle,var(--surface) 58%,transparent 59%),conic-gradient(var(--s,var(--track)) 0deg 112deg,transparent 112deg 120deg,var(--r,var(--track)) 120deg 232deg,transparent 232deg 240deg,var(--p,var(--track)) 240deg 352deg,transparent 352deg)}
+.cal button.d{border:0;color:var(--muted);background:radial-gradient(circle,var(--fill,var(--surface)) 58%,transparent 59%),conic-gradient(var(--s,var(--track)) 0deg 172deg,transparent 172deg 180deg,var(--r,var(--track)) 180deg 352deg,transparent 352deg)}
 .cal .d.full{color:var(--ink);font-weight:800}
 .cal .d.today{outline:0;box-shadow:0 0 0 2px var(--ink)}
 .cal .d.sel{box-shadow:0 0 0 3px var(--pull)}
@@ -373,10 +376,10 @@ function puLogTotal(l){ if(l.day==="pyramid")return (l.ladders||[]).reduce((a,x)
 
 /* ================= VIEWS ================= */
 let session=migrateDraft(lsGet("hybrid-ppl-draft")), tab="today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
-let psub="pullups", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null, editHeight=false, progDay=null;
+let psub="overview", liftSel="", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null, editHeight=false, progDay=null;
 const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
-const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine",run:"Log a run"};
-function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${(tab==="routine"||tab==="run"?"today":tab)===k?"on":""}">${n}</button>`).join("")}
+const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine",run:"Log a run",pullup:"Pull-ups"};
+function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${(tab==="routine"||tab==="run"||tab==="pullup"?"today":tab)===k?"on":""}">${n}</button>`).join("")}
 
 const openD=new Set();
 document.addEventListener("toggle",e=>{const d=e.target;if(d.tagName!=="DETAILS")return;const k=(d.querySelector("summary")?.textContent||"").trim();d.open?openD.add(k):openD.delete(k)},true);
@@ -388,8 +391,8 @@ function render(){
   const m=$("#main");
   if(session&&tab==="session"){ $("#hdr-title").textContent=(session.day||SPLITS[session.split].name)+" session"; m.innerHTML=viewSession(); restoreDetails(); return; }
   if(tab==="session")tab="today";
-  $("#hdr-title").textContent=tab==="more"&&moreSub?({measure:"Measurements",records:"Records",backup:"Backup",program:"Programs"})[moreSub]:TITLES[tab];
-  m.innerHTML=({today:viewToday,progress:viewProgress,more:viewMore,routine:viewRoutine,run:viewRunScreen})[tab]();
+  $("#hdr-title").textContent=tab==="more"&&moreSub?({measure:"Measurements",records:"Records",backup:"Backup",program:"Programs",log:"Activity log"})[moreSub]:TITLES[tab];
+  m.innerHTML=({today:viewToday,progress:viewProgress,more:viewMore,routine:viewRoutine,run:viewRunScreen,pullup:viewPullups})[tab]();
   restoreDetails();
 }
 
@@ -416,6 +419,7 @@ function dayDetail(ds){
 function calCard(){
   const now=new Date(),m=new Date(now.getFullYear(),now.getMonth()+calOff,1);
   const lead=(m.getDay()+6)%7,dim=new Date(m.getFullYear(),m.getMonth()+1,0).getDate(),{t,r,p}=dayMap(),td=today();
+  const first=LOGS.reduce((a,l)=>l.date<a?l.date:a,"9999");
   let cells="",full=0;
   for(let i=0;i<lead;i++)cells+="<div></div>";
   for(let d=1;d<=dim;d++){
@@ -424,7 +428,8 @@ function calCard(){
     if(ds>td)c+=" future";else if(tr&&ro){c+=" full";full++}
     if(ds===td)c+=" today";
     if(ds===selDay)c+=" sel";
-    const sty=ds>td?"":`${tr?"--s:var(--accent);":""}${ro?"--r:var(--home);":""}${pu?"--p:var(--pull);":""}`;
+    const rest=ds<td&&ds>=first&&!tr&&!pu;
+    const sty=ds>td?"":`${tr?"--s:var(--accent);":""}${ro?"--r:var(--home);":""}${pu?"--fill:color-mix(in srgb,var(--pull) 38%,var(--surface));":rest?"--fill:color-mix(in srgb,var(--muted) 24%,var(--surface));":""}`;
     cells+=`<button class="${c}" style="${sty}" data-a="day" data-k="${ds}" aria-label="${ds}${tr?", trained":""}${pu?", pull-ups":""}${ro?", routine done":""}">${d}</button>`;
   }
   return `<section class="card">
@@ -432,7 +437,7 @@ function calCard(){
     <div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
     <div class="cal">${cells}</div>
     ${selDay?dayDetail(selDay):""}
-    <div class="legend small muted"><span><i style="background:var(--accent)"></i>Session or run</span><span><i style="background:var(--home)"></i>Home routine</span><span><i style="background:var(--pull)"></i>Pull-ups</span></div>
+    <div class="legend small muted"><span><i style="background:var(--accent)"></i>Session or run</span><span><i style="background:var(--home)"></i>Home routine</span><span><i style="background:color-mix(in srgb,var(--pull) 55%,var(--surface))"></i>Pull-ups</span><span><i style="background:color-mix(in srgb,var(--muted) 45%,var(--surface))"></i>Rest day</span></div>
   </section>`;
 }
 function sheetView(){
@@ -440,6 +445,7 @@ function sheetView(){
   return `<div class="sheet" data-a="sheet-close"><div data-a="noop">
     <h2>What did you do?</h2>
     ${order.map((k,i)=>`<button class="btn opt" style="--c:${cvar(k)}" data-a="start" data-k="${k}"><b>${SPLITS[k].name}</b><span class="muted small">${i===0?"next in rotation":""}</span></button>`).join("")}
+    <button class="btn opt" style="--c:var(--pull)" data-a="sheet-pu"><b>Pull-ups</b><span class="muted small">${PU_DAYS[S.pu.next].name} next</span></button>
     <button class="btn opt" style="--c:var(--warn)" data-a="sheet-run"><b>Run</b><span class="muted small">log distance and time</span></button>
     <button class="btn" data-a="sheet-close">Cancel</button>
   </div></div>`;
@@ -452,6 +458,7 @@ function viewToday(){
   ${calCard()}
   ${session?`<section class="card edge" style="--c:${cvar(session.split)}"><div class="row between"><div><span class="eyebrow">In progress</span><h3>${SPLITS[session.split].name} session</h3></div><button class="btn primary ${session.split==="legs"?"legs":""}" style="--c:${cvar(session.split)}" data-a="resume">Resume</button></div></section>`:""}
   <button class="btn big" data-a="sheet-open" ${ready?"":"disabled"}>Start session</button>
+  ${puHomeCard()}
   <section class="card edge" style="--c:var(--home)">
     <div class="row between"><span class="eyebrow">Home routine</span><span class="pill">${weekHomeDays()}/7 days this week</span></div>
     <div class="row between"><h3>${n}/${tot} done today</h3><button class="btn sm" data-a="tab" data-k="routine">Open</button></div>
@@ -461,6 +468,12 @@ function viewToday(){
   ${lastCard()}
   ${sheet?sheetView():""}
   </div>`;
+}
+function puHomeCard(){
+  const pu=puSummary(),nm=PU_DAYS[S.pu.next].name,l=pu.last;
+  const due=pu.due?"Due today":(2-pu.d===1?"Due tomorrow":`Due in ${2-pu.d} days`);
+  const ago=l?(pu.d===0?"today":pu.d===1?"yesterday":`${pu.d} days ago`):"";
+  return `<section class="card edge" style="--c:var(--pull)"><div class="row between"><div><span class="eyebrow">Pull-ups · ${due}</span><h3>Next: ${nm}</h3>${l?`<div class="muted small">Last: ${PU_DAYS[l.day].name}, ${ago}</div>`:""}</div><button class="btn sm" data-a="tab" data-k="pullup">Log</button></div></section>`;
 }
 function lastCard(){
   const l=LOGS.find(x=>x.type==="session"||x.type==="run");
@@ -475,9 +488,9 @@ function viewRoutine(){
   return `<div class="stack"><div><button class="btn sm ghost" data-a="tab" data-k="today">‹ Back to Home</button></div>${viewHome()}</div>`;
 }
 function viewProgress(){
-  const subs=[["pullups","Pull-ups"],["skills","Skills"],["log","Activity log"]];
-  const body=({pullups:viewPullups,skills:viewSkills,log:viewLog})[psub]();
-  return `<div class="stack"><div class="seg" role="group" aria-label="Progress sections">${subs.map(([k,n])=>`<button class="${psub===k?"on":""}" data-a="psub" data-k="${k}">${n}</button>`).join("")}</div>${body}</div>`;
+  const subs=[["overview","Overview"],["pullups","Pull-ups"],["skills","Skills"],["lifts","Lifts"],["body","Body"]];
+  const body=({overview:anOverview,pullups:anPullups,skills:anSkills,lifts:anLifts,body:anBody})[psub]();
+  return `<div class="stack"><div class="seg" role="group" aria-label="Progress sections" style="flex-wrap:nowrap;overflow-x:auto">${subs.map(([k,n])=>`<button class="${psub===k?"on":""}" data-a="psub" data-k="${k}" style="flex:1 1 auto;padding:8px 6px;font-size:13px;white-space:nowrap">${n}</button>`).join("")}</div>${body}</div>`;
 }
 function runAdvice(){
   const run=lastOf("run");const gap=run?daysSince(run.date):null;
@@ -627,8 +640,8 @@ function viewPullups(){
     body=`<div class="stack" style="gap:8px">${d.ladders.map((x,i)=>`<div class="set" style="grid-template-columns:70px 1fr 1fr 44px"><span class="lab">Ladder ${i+1}</span><input type="number" inputmode="numeric" aria-label="Peak" id="pu-pyr-${i}" data-f="pupyr" data-i="${i}" value="${esc(x.peak)}"><button class="btn sm ${x.clean?"":"primary"}" style="--c:var(--warn)" data-a="pu-pyr-clean" data-i="${i}">${x.clean?"Clean":"Failed a step"}</button><button class="chk ${x.done?"on":""}" data-a="pu-pyr-done" data-i="${i}">${x.done?"✓":""}</button></div>`).join("")}</div>
     <div class="muted small">Peak ${d.peak} on every ladder: 1 → ${d.peak} → 1 = ${d.peak*d.peak} reps each. Stop each ladder one rep before failure.</div>`;
   }
-  const hist=LOGS.filter(l=>l.type==="pullup").slice().reverse();
   return `<div class="stack">
+    <div><button class="btn sm ghost" data-a="tab" data-k="${session?"session":"today"}">‹ Back</button></div>
     <section class="card edge" style="--c:var(--pull)">
       <div class="row between"><span class="eyebrow">Next session</span>${pu.due?'<span class="pill due" style="--c:var(--pull)">Due today</span>':`<span class="pill">Last one ${pu.d} d ago</span>`}</div>
       <div class="big">${info.name}</div>
@@ -637,38 +650,115 @@ function viewPullups(){
       <div class="row"><button class="btn sm" data-a="rest" data-s="${info.rest}">Rest ${info.rest>=60?Math.floor(info.rest/60)+":"+pad(info.rest%60):info.rest+" s"}</button>
       <button class="btn primary" style="--c:var(--pull)" data-a="pu-save" ${ready?"":"disabled"}>Save ${info.name.toLowerCase()}</button></div>
     </section>
-    <section class="card"><details><summary>How the pull-up program works</summary><div class="stack" style="gap:8px;margin-top:8px">
-      <div class="muted small">Pull-ups every other day, always first in your session. The day types rotate: Max, Density, Pyramid, then Max again.</div>
-      <div class="small"><b>Max day:</b> 3 sets of as many clean reps as you can. It measures your strength.</div>
-      <div class="small"><b>Density day:</b> 10 sets of the same small number of reps, 1 minute rest. Finish all 10 and the target goes up by 1.</div>
-      <div class="small"><b>Pyramid day:</b> go 1, 2, 3 … up to your peak and back down, 5 times, never to failure. Five clean ladders and the peak goes up by 1.</div>
-      <div class="muted small">Run it 6 weeks, then a lighter week, then retest your max. The app moves the numbers up for you.</div></div></details></section>
-    <section class="card"><details><summary>Adjust the numbers</summary><div class="stack" style="margin-top:8px">
-      <div class="muted small">Only needed if the app got something wrong. The pyramid peak is the number you aim for on your next pyramid day. You can still change the peak of any single ladder when you log it.</div>
-      <div class="row between"><span>Density: <b>${S.pu.densityTarget}</b> reps per set</span><span class="row"><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="densityTarget" data-d="-1" aria-label="Density down">−</button><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="densityTarget" data-d="1" aria-label="Density up">+</button></span></div>
-      <div class="row between"><span>Next pyramid peak: <b>${S.pu.ladderPeak}</b></span><span class="row"><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="ladderPeak" data-d="-1" aria-label="Peak down">−</button><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="ladderPeak" data-d="1" aria-label="Peak up">+</button></span></div>
-      <div class="muted small">Next pull-up day:</div>
-      <div class="seg" role="group" aria-label="Next day">${Object.keys(PU_DAYS).map(k=>`<button class="${S.pu.next===k?"on":""}" data-a="pu-next" data-k="${k}">${PU_DAYS[k].name}</button>`).join("")}</div></div></details></section>
-    <section class="card"><span class="eyebrow">Total reps per session</span>${puChart(hist)}</section>
+    <section class="card"><details><summary class="small">Not the right day type? Switch</summary><div class="seg" style="margin-top:8px" role="group" aria-label="Next day">${Object.keys(PU_DAYS).map(k=>`<button class="${S.pu.next===k?"on":""}" data-a="pu-next" data-k="${k}">${PU_DAYS[k].name}</button>`).join("")}</div></details></section>
   </div>`;
 }
 function puChart(hist){
   const rows=["max","density","pyramid"].map(day=>({day,pts:hist.filter(l=>l.day===day).slice(-10)}));
-  const W=600,rowH=70,pad0=96,H=rows.length*rowH+8;
+  const W=600,rowH=70,pad0=150,H=rows.length*rowH+8;
   const colors={max:"var(--ink)",density:"var(--pull)",pyramid:"var(--home)"};
   let g="";
   rows.forEach((r,ri)=>{
     const y0=ri*rowH+8, vals=r.pts.map(puLogTotal), mx=Math.max(1,...vals);
-    g+=`<text x="0" y="${y0+22}" fill="var(--ink)" font-size="15" font-weight="600" font-family="-apple-system,system-ui,sans-serif">${PU_DAYS[r.day].name.toUpperCase()}</text>`;
+    g+=`<text x="0" y="${y0+22}" fill="var(--ink)" font-size="21" font-weight="600" font-family="-apple-system,system-ui,sans-serif">${PU_DAYS[r.day].name.toUpperCase()}</text>`;
     g+=`<line x1="${pad0}" x2="${W}" y1="${y0+54}" y2="${y0+54}" stroke="var(--line)"/>`;
-    if(!vals.length){g+=`<text x="${pad0}" y="${y0+40}" fill="var(--muted)" font-size="13">No sessions yet</text>`;return}
+    if(!vals.length){g+=`<text x="${pad0}" y="${y0+40}" fill="var(--muted)" font-size="17">No sessions yet</text>`;return}
     const bw=Math.min(44,(W-pad0)/10-8);
     vals.forEach((v,i)=>{const h=Math.max(2,(v/mx)*38),x=pad0+i*(bw+8),y=y0+54-h;const lastOne=i===vals.length-1;
-      g+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="3" fill="${colors[r.day]}" opacity="${lastOne?1:.45}"/><text x="${x+bw/2}" y="${y-4}" text-anchor="middle" fill="var(--muted)" font-size="12">${v}</text>`});
+      g+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="3" fill="${colors[r.day]}" opacity="${lastOne?1:.45}"/><text x="${x+bw/2}" y="${y-4}" text-anchor="middle" fill="var(--muted)" font-size="17">${v}</text>`});
   });
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Total reps per pull-up session, by day type">${g}</svg><div class="muted small">Weeks 1–3 come from your notes; their dates are approximate.</div>`;
 }
 
+/* ---------- Analytics ---------- */
+const MS=864e5, tsOf=ds=>Date.parse(ds+"T12:00:00");
+const shortD=t=>new Date(t).toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+function weekStart(ds){const d=new Date(ds+"T12:00:00");d.setDate(d.getDate()-((d.getDay()+6)%7));return dstr(d)}
+function lastWeeks(n){const o=[],d=new Date();d.setDate(d.getDate()-((d.getDay()+6)%7));for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-7*i);o.push(dstr(x))}return o}
+function lineChart(pts,o={}){
+  if(!pts.length)return `<div class="muted small">No data yet.</div>`;
+  const W=420,H=190,L=34,R=12,T=16,B=28,col=o.color||"var(--accent)";
+  let x0=Math.min(...pts.map(p=>p.t)),x1=Math.max(...pts.map(p=>p.t));if(x0===x1){x0-=MS*3;x1+=MS*3}
+  let y0=o.zero?0:Math.min(...pts.map(p=>p.y)),y1=Math.max(...pts.map(p=>p.y));if(y0===y1){y0=Math.max(0,y0-1);y1+=1}
+  const pad=(y1-y0)*.14;if(!o.zero)y0-=pad;y1+=pad;
+  const X=t=>L+(t-x0)/(x1-x0)*(W-L-R),Y=y=>T+(1-(y-y0)/(y1-y0))*(H-T-B),r1=v=>Math.round(v*10)/10;
+  let g="";[y0,(y0+y1)/2,y1].forEach(v=>{g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L-6}" y="${Y(v)+4}" text-anchor="end" fill="var(--muted)" font-size="12">${r1(v)}</text>`});
+  const path=pts.map((p,i)=>`${i?"L":"M"}${X(p.t)},${Y(p.y)}`).join(" ");
+  const last=pts[pts.length-1];
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label||"Chart")}">${g}<path d="${path}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${pts.map(p=>`<circle cx="${X(p.t)}" cy="${Y(p.y)}" r="3.5" fill="${col}"/>`).join("")}
+  <text x="${Math.min(W-R,X(last.t)+6)}" y="${Y(last.y)-9}" text-anchor="end" fill="var(--ink)" font-size="14" font-weight="700">${r1(last.y)}${o.unit||""}</text>
+  <text x="${L}" y="${H-7}" fill="var(--muted)" font-size="12">${shortD(x0===pts[0].t?x0:Math.min(...pts.map(p=>p.t)))}</text><text x="${W-R}" y="${H-7}" text-anchor="end" fill="var(--muted)" font-size="12">${shortD(Math.max(...pts.map(p=>p.t)))}</text></svg>`;
+}
+function barChart(items,o={}){
+  const W=420,H=170,T=20,B=26,n=items.length,mx=Math.max(1,...items.map(i=>i.v)),bw=Math.min(34,(W-16)/n-8),col=o.color||"var(--accent)";
+  const step=(W-16)/n;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label||"Chart")}">${items.map((it,i)=>{const h=it.v?Math.max(3,it.v/mx*(H-T-B)):0,x=8+i*step+(step-bw)/2,y=H-B-h;
+    return `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="6" fill="${col}" opacity="${i===n-1?1:.55}"/>${it.v?`<text x="${x+bw/2}" y="${y-5}" text-anchor="middle" fill="var(--ink)" font-size="13" font-weight="700">${Math.round(it.v*10)/10}</text>`:""}<text x="${x+bw/2}" y="${H-8}" text-anchor="middle" fill="var(--muted)" font-size="12">${esc(it.l)}</text>`}).join("")}</svg>`;
+}
+const CAT_RX=[["Core",/wheel|crunch|plank|hollow|leg raise|pallof/i],["Triceps",/tricep|skull|pushdown|close-grip/i],["Legs",/leg curl|leg extension|squat|deadlift|romanian|\brdl\b|thrust|lunge|calf|tibialis|nordic|adductor|copenhagen/i],["Biceps",/curl/i],["Shoulders",/lateral|overhead press|shoulder press|military/i],["Back",/row|face pull|rear delt|pec deck|y-raise|pulldown|pull-up/i],["Chest",/bench|press|fly|dip|push-up/i],["Skills & holds",/planche|lever|handstand|hang|lean/i]];
+function catOfEx(n){const c=catalog().find(e=>e.n===n);if(c)return c.cat;for(const [k,rx] of CAT_RX)if(rx.test(n))return k;return "Other"}
+function activeSets(){const t={},r={},p={};const d=dayMap();return new Set([...Object.keys(d.t),...Object.keys(d.r),...Object.keys(d.p)])}
+function longestStreak(){const ds=[...activeSets()].sort();let best=0,cur=0,prev=null;for(const x of ds){cur=prev&&Math.round((tsOf(x)-tsOf(prev))/MS)===1?cur+1:1;best=Math.max(best,cur);prev=x}return best}
+function stat(v,l){return `<div class="stat"><b>${v}</b><span class="muted small">${l}</span></div>`}
+function anOverview(){
+  const mo=today().slice(0,7),inMo=l=>l.date.startsWith(mo),dm=dayMap();
+  const sess=LOGS.filter(l=>l.type==="session"&&inMo(l)).length,km=LOGS.filter(l=>l.type==="run"&&inMo(l)).reduce((a,l)=>a+(+l.km||0),0);
+  const pud=Object.keys(dm.p).filter(x=>x.startsWith(mo)).length,rod=Object.keys(dm.r).filter(x=>x.startsWith(mo)).length;
+  const wk=lastWeeks(8);
+  const sw=wk.map(w=>({l:shortD(tsOf(w)),v:LOGS.filter(l=>l.type==="session"&&weekStart(l.date)===w).length}));
+  const kw=wk.map(w=>({l:shortD(tsOf(w)),v:LOGS.filter(l=>l.type==="run"&&weekStart(l.date)===w).reduce((a,l)=>a+(+l.km||0),0)}));
+  const stw=wk.map(w=>({l:shortD(tsOf(w)),v:LOGS.filter(l=>l.type==="session"&&weekStart(l.date)===w).reduce((a,l)=>a+(l.items||[]).reduce((b,i)=>b+(i.sets||[]).length,0),0)}));
+  // sets per muscle group: this week vs average of previous 4 weeks
+  const cats={},w0=wk[wk.length-1],prev=wk.slice(-5,-1);
+  for(const l of LOGS)if(l.type==="session"){const ws=weekStart(l.date);for(const it of l.items||[]){const c=catOfEx(it.ex);cats[c]=cats[c]||{now:0,prev:0};if(ws===w0)cats[c].now+=(it.sets||[]).length;else if(prev.includes(ws))cats[c].prev+=(it.sets||[]).length/4}}
+  const rows=Object.keys(cats).sort((a,b)=>cats[b].now+cats[b].prev-cats[a].now-cats[a].prev),mx=Math.max(1,...rows.map(c=>Math.max(cats[c].now,cats[c].prev)));
+  return `<section class="card"><span class="eyebrow">This month</span><div class="stats">${stat(sess,"Sessions")}${stat(Math.round(km*10)/10,"Run km")}${stat(pud,"Pull-up days")}${stat(rod,"Routine days")}${stat(streakDays(),"Current streak")}${stat(longestStreak(),"Longest streak")}</div></section>
+  <section class="card"><span class="eyebrow">Sessions per week</span>${barChart(sw,{label:"Sessions per week"})}</section>
+  <section class="card"><span class="eyebrow">Sets per week</span>${barChart(stw,{color:"var(--pull)",label:"Sets per week"})}</section>
+  <section class="card"><span class="eyebrow">Sets per muscle group</span><div class="muted small">This week against your average of the last 4 weeks.</div>
+    ${rows.length?rows.map(c=>`<div class="stack" style="gap:4px"><div class="row between"><span>${esc(c)}</span><span class="small"><b>${cats[c].now}</b> <span class="muted">· avg ${Math.round(cats[c].prev*10)/10}</span></span></div><div class="bar" style="height:8px"><i style="width:${Math.round(cats[c].now/mx*100)}%"></i></div><div class="bar" style="height:4px"><i style="width:${Math.round(cats[c].prev/mx*100)}%;background:var(--muted)"></i></div></div>`).join(""):'<div class="muted small">Finish a session to see this.</div>'}</section>
+  <section class="card"><span class="eyebrow">Run km per week</span>${barChart(kw,{color:"var(--warn)",label:"Run km per week"})}</section>`;
+}
+function anPullups(){
+  const L=LOGS.filter(l=>l.type==="pullup").slice().sort((a,b)=>a.date<b.date?-1:1),hist=L.slice().reverse();
+  const pts=(day,f)=>L.filter(l=>l.day===day).map(l=>({t:tsOf(l.date),y:f(l)})).filter(p=>p.y>0);
+  const total=L.reduce((a,l)=>a+puLogTotal(l),0),bestMax=Math.max(0,...L.filter(l=>l.day==="max").map(l=>Math.max(0,...l.sets)));
+  return `<section class="card"><span class="eyebrow">All time</span><div class="stats">${stat(L.length,"Pull-up days")}${stat(total,"Total reps")}${stat(bestMax||"–","Best max set")}${stat(S.pu.densityTarget,"Density target")}</div></section>
+  <section class="card"><span class="eyebrow">Total reps per session</span>${puChart(hist)}</section>
+  <section class="card"><span class="eyebrow">Best set on max days</span>${lineChart(pts("max",l=>Math.max(0,...l.sets)),{unit:" reps",label:"Best set on max days"})}</section>
+  <section class="card"><span class="eyebrow">Density target</span>${lineChart(pts("density",l=>+l.target||0),{color:"var(--pull)",label:"Density target"})}</section>
+  <section class="card"><span class="eyebrow">Pyramid peak</span>${lineChart(pts("pyramid",l=>Math.max(0,...(l.ladders||[]).map(x=>+x.peak||0))),{color:"var(--home)",label:"Pyramid peak"})}</section>`;
+}
+function skillPts(k){
+  const nm=SKILLS[k].name,lv=SKILLS[k].levels[S.skills[k].level],key=nm+" · "+lv,pts=[];
+  for(const l of LOGS){
+    if(l.type==="test"&&l.skill===nm&&l.level===lv)pts.push({t:tsOf(l.date),y:l.seconds});
+    else if(l.type==="session")for(const it of l.items||[])if(it.kind==="hold"&&it.ex===key)pts.push({t:tsOf(l.date),y:Math.max(0,...(it.sets||[]).map(x=>x.s||0))});
+  }
+  return pts.filter(p=>p.y>0).sort((a,b)=>a.t-b.t);
+}
+function anSkills(){
+  return Object.keys(SKILLS).map(k=>{const sk=S.skills[k],lv=SKILLS[k].levels[sk.level],pts=skillPts(k);
+    return `<section class="card"><div class="row between"><h3>${SKILLS[k].name}</h3><span class="muted small">${lv}${sk.baseline?` · best ${sk.baseline} s`:""}</span></div><div class="muted small">Best hold per day at your training level (seconds).</div>${lineChart(pts,{unit:" s",label:SKILLS[k].name+" hold over time"})}</section>`}).join("")
+  +`<div class="muted small" style="text-align:center">Add records and change your training level in More, then Records.</div>`;
+}
+function anLifts(){
+  const by={};
+  for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift"){const e=Math.max(0,...(it.sets||[]).filter(x=>x.w&&x.r).map(x=>x.w*(1+x.r/30)));if(e>0){(by[it.ex]=by[it.ex]||[]).push({t:tsOf(l.date),y:Math.round(e),w:Math.max(...it.sets.filter(x=>x.w).map(x=>x.w))})}}
+  const names=Object.keys(by).sort((a,b)=>by[b][by[b].length-1].t-by[a][by[a].length-1].t||a.localeCompare(b));
+  if(!names.length)return `<section class="card"><div class="muted">Log some lifts in a session and your strength curves show up here.</div></section>`;
+  const sel=names.includes(liftSel)?liftSel:names[0],pts=by[sel].sort((a,b)=>a.t-b.t);
+  return `<section class="card"><select data-a="lift-sel" aria-label="Exercise">${names.map(n=>`<option ${n===sel?"selected":""}>${esc(n)}</option>`).join("")}</select>
+    <span class="eyebrow">Estimated 1RM (kg)</span>${lineChart(pts,{unit:" kg",label:"Estimated one-rep max"})}
+    <span class="eyebrow">Heaviest weight (kg)</span>${lineChart(pts.map(p=>({t:p.t,y:p.w})),{color:"var(--pull)",unit:" kg",label:"Heaviest weight"})}</section>`;
+}
+function anBody(){
+  const ws=LOGS.filter(l=>l.type==="weight").slice().sort((a,b)=>a.ts-b.ts),pts=ws.map(l=>({t:tsOf(l.date),y:l.kg})),h=S.metrics.height;
+  const last=ws[ws.length-1],first=ws[0];
+  return `<section class="card"><span class="eyebrow">Body weight (kg)</span>${lineChart(pts,{unit:" kg",label:"Body weight"})}
+    ${last?`<div class="row between"><span class="muted">Change since first entry</span><b>${(last.kg-first.kg>0?"+":"")+Math.round((last.kg-first.kg)*10)/10} kg</b></div>`:'<div class="muted small">Add weights in More, then Measurements.</div>'}
+    ${last&&h?`<div class="row between"><span class="muted">BMI</span><b>${Math.round(last.kg/((h/100)**2)*10)/10}</b></div>`:""}</section>`;
+}
 /* ---------- Home ---------- */
 function viewHome(){
   const h=homeLog(), done=h?.done||[];
@@ -684,23 +774,6 @@ function viewHome(){
 }
 
 /* ---------- Skills ---------- */
-function viewSkills(){
-  return `<div class="stack">
-  <section class="card"><span class="eyebrow">Priority skill</span>
-  <div class="seg" role="group" aria-label="Priority skill">${Object.keys(SKILLS).map(k=>`<button class="${S.priority===k?"on":""}" data-a="prio" data-k="${k}">${SKILLS[k].name}</button>`).join("")}</div>
-  <div class="muted small">Priority skill gets 6 holds a session, the others 3. Switch every 6–8 weeks.</div></section>
-  ${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],lv=SKILLS[k].levels,t=holdTarget(k);
-    const where=k==="planche"?"Push day":k==="frontlever"?"Legs day":"Pull day";
-    return `<section class="card"><div class="row between"><h3>${SKILLS[k].name}</h3><span class="pill">${S.priority===k?"Priority":"Maintenance"} · ${where}</span></div>
-    <div class="row between"><span class="muted">Level</span><b>${lv[sk.level]}</b></div>
-    <div class="row between"><span class="muted">Best test</span><b>${sk.baseline?sk.baseline+" s":"Not tested"}</b></div>
-    <div class="row between"><span class="muted">Hold target</span><b>${t?`${holdCount(k)} × ${t} s`:"–"}</b></div>
-    ${t>=10&&sk.level<lv.length-1?`<div class="hint good">Ready to try ${lv[sk.level+1]}. Move up, then test it.</div>`:""}
-    <details><summary class="small">Change level</summary><div class="row" style="margin-top:8px"><button class="btn sm ghost" data-a="sk-level" data-k="${k}" data-d="-1" ${sk.level?"":"disabled"}>Level down</button><button class="btn sm ghost" data-a="sk-level" data-k="${k}" data-d="1" ${sk.level<lv.length-1?"":"disabled"}>Level up</button></div></details><div class="row"><a class="link" href="${demo(SKILLS[k].name+" "+lv[sk.level]+" progression")}" target="_blank" rel="noopener">Watch demo ↗</a></div></section>`}).join("")}
-  <div class="muted small" style="text-align:center">Record your max holds in More, then Records.</div>
-  </div>`;
-}
-
 /* ---------- Log ---------- */
 function histCard(list,title){
   const items=list.slice(0,80).map(l=>{
@@ -754,7 +827,10 @@ function viewRecords(){
   for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift")for(const x of it.sets||[])if(x.w&&x.r){const e=Math.round(x.w*(1+x.r/30)),c=prs.find(q=>q.n===it.ex);if(!c)prs.push({n:it.ex,w:x.w,r:x.r,e,date:l.date});else if(e>c.e)Object.assign(c,{w:x.w,r:x.r,e,date:l.date})}
   prs.sort((a,b)=>a.n.localeCompare(b.n));
   const hd=S.hang.d||{},hl=(v,d)=>`${v??"–"} s${d?` <span class="muted small">${fmtDate(d)}</span>`:""}`;
-  return `${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],lv=SKILLS[k].levels,nm=SKILLS[k].name;
+  return `<section class="card"><span class="eyebrow">Priority skill</span>
+    <div class="seg" role="group" aria-label="Priority skill">${Object.keys(SKILLS).map(k=>`<button class="${S.priority===k?"on":""}" data-a="prio" data-k="${k}">${SKILLS[k].name}</button>`).join("")}</div>
+    <div class="muted small">The priority skill gets 6 holds a session, the others 3. Switch every 6–8 weeks.</div></section>
+  ${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],lv=SKILLS[k].levels,nm=SKILLS[k].name;
     const rows=[];lv.forEach(l=>[l,l+" (banded)"].forEach(x=>{const r=rec[nm+" · "+x];if(r)rows.push([x,r])}));
     return `<section class="card"><h3>${nm}</h3>
     <div class="row between"><span class="muted">Training level</span><select data-a="lvl-set" data-k="${k}" style="width:auto" aria-label="Training level">${lv.map((l,i)=>`<option value="${i}" ${i===sk.level?"selected":""}>${l}</option>`).join("")}</select></div>
@@ -889,6 +965,7 @@ function viewMore(){
   if(moreSub==="measure")return `<div class="stack">${backBtn()}${viewMeasure()}</div>`;
   if(moreSub==="records")return `<div class="stack">${backBtn()}${viewRecords()}</div>`;
   if(moreSub==="program")return `<div class="stack">${progDay?`<div><button class="btn sm ghost" data-a="prog-day" data-k="">‹ All programs</button></div>`:backBtn()}${viewPrograms()}</div>`;
+  if(moreSub==="log")return `<div class="stack">${backBtn()}${viewLog()}</div>`;
   if(moreSub==="backup")return `<div class="stack">${backBtn()}${backupCard()}</div>`;
   const w=lastOf("weight");
   const row=(k,t,d)=>`<button class="btn" style="display:flex;justify-content:space-between;align-items:center;text-align:left;min-height:56px" data-a="more-go" data-k="${k}"><span><b>${t}</b><br><span class="muted small">${d}</span></span><span class="muted">›</span></button>`;
@@ -896,6 +973,7 @@ function viewMore(){
   ${row("measure","Measurements",w?`${w.kg} kg on ${fmtDate(w.date)}${S.metrics.height?` · ${S.metrics.height} cm`:""}`:"Body weight and height")}
   ${row("program","Programs","Push A/B, Pull A/B, Legs A/B")}
   ${row("records","Records","Skill holds and lift max strength")}
+  ${row("log","Activity log","Everything you have logged")}
   ${row("backup","Backup and restore","Keep your data safe")}
   <div class="muted small" style="text-align:center">App version ${APP_VERSION}</div>
   </div>`;
@@ -913,6 +991,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",e=>{
   const t=e.target;
+  if(t.dataset.a==="lift-sel"){liftSel=t.value;render();return}
   if(t.dataset.a==="lvl-set"){const k=t.dataset.k;setSkillLevel(k,+t.value);render();toast(`Training ${SKILLS[k].levels[S.skills[k].level]}. `+(S.skills[k].baseline?`Target ${holdTarget(k)} s from your record.`:"Test it next session."));return}
   if(t.id==="import-file"&&t.files&&t.files[0]){const r=new FileReader();r.onload=()=>{importText=String(r.result||"");render()};r.readAsText(t.files[0]);return}
 });
@@ -924,7 +1003,6 @@ document.addEventListener("click",async e=>{
     case "noop":break;
     case "prog-day":progDay=b.dataset.k||null;confirmKey=null;render();window.scrollTo(0,0);break;
     case "load-prog":{const id=b.dataset.k;if(session&&confirmKey!=="load-"+id){confirmKey="load-"+id;render();break}loadProgramDay(id);break}
-    case "records-go":tab="more";moreSub="records";render();window.scrollTo(0,0);break;
     case "more-go":moreSub=b.dataset.k||null;progDay=null;render();window.scrollTo(0,0);break;
     case "pick-open":pick={cat:catOrder(session.split)[0]};render();break;
     case "pick-close":pick=null;render();break;
@@ -940,10 +1018,10 @@ document.addEventListener("click",async e=>{
     case "height-save":{const v=num($("#m-height").value);if(!v){toast("Enter your height in cm");break}S.metrics.height=v;editHeight=false;saveState();render();toast("Height saved");break}
     case "height-edit":editHeight=true;render();break;
     case "psub":psub=b.dataset.k;render();break;
-    case "psub-go":tab="progress";psub=b.dataset.k;render();window.scrollTo(0,0);break;
     case "cal":calOff=Math.min(0,calOff+ +b.dataset.d);render();break;
     case "sheet-open":sheet=true;render();break;
     case "sheet-close":sheet=false;render();break;
+    case "sheet-pu":sheet=false;tab="pullup";render();window.scrollTo(0,0);break;
     case "sheet-run":sheet=false;tab="run";render();window.scrollTo(0,0);break;
     case "resume":tab="session";render();window.scrollTo(0,0);break;
     case "timer-stop":clearInterval(tInt);tInt=null;$("#timer").hidden=true;break;
@@ -958,7 +1036,7 @@ document.addEventListener("click",async e=>{
     case "skill-test":{const k=b.dataset.k,v=num($("#test-"+k).value);if(!v){toast("Enter your hold in seconds");break}
       await saveTest(k,v);session.slots[b.dataset.slot]=makeSlot({skill:k});saveDraft();render();toast(`Saved. Target: ${holdCount(k)} × ${holdTarget(k)} s`);break}
     case "finish":await finishSession();break;
-    case "pu-open":tab="progress";psub="pullups";render();window.scrollTo(0,0);toast("Session kept. Resume it from Home.");break;
+    case "pu-open":tab="pullup";render();window.scrollTo(0,0);break;
     case "pu-den-done":{const s=puDraft.sets[+b.dataset.i];s.done=!s.done;render();if(s.done)startTimer(60,"Rest");break}
     case "pu-pyr-clean":{const x=puDraft.ladders[+b.dataset.i];x.clean=!x.clean;render();break}
     case "pu-pyr-done":{const x=puDraft.ladders[+b.dataset.i];x.done=!x.done;render();break}
@@ -1041,11 +1119,11 @@ async function savePullups(){
     lad.forEach(x=>{if(x.reps==null)x.reps=Math.round(x.peak*x.peak*.7)});log.ladders=lad;
     if(lad.length>=5&&lad.every(x=>x.clean&&x.peak>=d.peak)){S.pu.ladderPeak=d.peak+1;msg=`Five clean ladders. Next peak: ${d.peak+1}`}
     else if(lad.some(x=>!x.clean))log.note="Failed ladders are counted at about 70% of their full reps.";}
-  S.pu.next=PU_NEXT[d.day];await putLog(log);saveState();puDraft=null;render();toast(msg);
+  S.pu.next=PU_NEXT[d.day];await putLog(log);saveState();puDraft=null;tab=session?"session":"today";render();window.scrollTo(0,0);toast(msg);
 }
 
 init();
-const APP_VERSION="v13"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v14"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
