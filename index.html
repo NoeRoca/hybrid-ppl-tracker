@@ -677,16 +677,16 @@ function weekStart(ds){const d=new Date(ds+"T12:00:00");d.setDate(d.getDate()-((
 function lastWeeks(n){const o=[],d=new Date();d.setDate(d.getDate()-((d.getDay()+6)%7));for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-7*i);o.push(dstr(x))}return o}
 function lineChart(pts,o={}){
   if(!pts.length)return `<div class="muted small">No data yet.</div>`;
-  const W=420,H=190,L=34,R=12,T=16,B=28,col=o.color||"var(--accent)";
+  const W=420,H=190,L=40,R=12,T=16,B=28,col=o.color||"var(--accent)";
   let x0=Math.min(...pts.map(p=>p.t)),x1=Math.max(...pts.map(p=>p.t));if(x0===x1){x0-=MS*3;x1+=MS*3}
   let y0=o.zero?0:Math.min(...pts.map(p=>p.y)),y1=Math.max(...pts.map(p=>p.y));if(y0===y1){y0=Math.max(0,y0-1);y1+=1}
   const pad=(y1-y0)*.14;if(!o.zero)y0-=pad;y1+=pad;
-  const X=t=>L+(t-x0)/(x1-x0)*(W-L-R),Y=y=>T+(1-(y-y0)/(y1-y0))*(H-T-B),r1=v=>Math.round(v*10)/10;
+  const X=t=>L+(t-x0)/(x1-x0)*(W-L-R),Y=y=>T+(1-(y-y0)/(y1-y0))*(H-T-B),r1=v=>(y1-y0)>20?Math.round(v):Math.round(v*10)/10;
   let g="";[y0,(y0+y1)/2,y1].forEach(v=>{g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L-6}" y="${Y(v)+4}" text-anchor="end" fill="var(--muted)" font-size="12">${r1(v)}</text>`});
   const path=pts.map((p,i)=>`${i?"L":"M"}${X(p.t)},${Y(p.y)}`).join(" ");
   const last=pts[pts.length-1];
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label||"Chart")}">${g}<path d="${path}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${pts.map(p=>`<circle cx="${X(p.t)}" cy="${Y(p.y)}" r="3.5" fill="${col}"/>`).join("")}
-  <text x="${Math.min(W-R,X(last.t)+6)}" y="${Y(last.y)-9}" text-anchor="end" fill="var(--ink)" font-size="14" font-weight="700">${r1(last.y)}${o.unit||""}</text>
+  ${o.labels&&pts.length<=12?pts.map((p,i)=>`<text x="${Math.min(W-R-14,Math.max(L+14,X(p.t)))}" y="${Y(p.y)-9}" text-anchor="middle" fill="var(--ink)" font-size="12" font-weight="700">${esc(o.labels[i])}</text>`).join(""):`<text x="${Math.min(W-R,X(last.t)+6)}" y="${Y(last.y)-9}" text-anchor="end" fill="var(--ink)" font-size="14" font-weight="700">${r1(last.y)}${o.unit||""}</text>`}
   <text x="${L}" y="${H-7}" fill="var(--muted)" font-size="12">${shortD(x0===pts[0].t?x0:Math.min(...pts.map(p=>p.t)))}</text><text x="${W-R}" y="${H-7}" text-anchor="end" fill="var(--muted)" font-size="12">${shortD(Math.max(...pts.map(p=>p.t)))}</text></svg>`;
 }
 function barChart(items,o={}){
@@ -744,13 +744,18 @@ function anSkills(){
 }
 function anLifts(){
   const by={};
-  for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift"){const e=Math.max(0,...(it.sets||[]).filter(x=>x.w&&x.r).map(x=>x.w*(1+x.r/30)));if(e>0){(by[it.ex]=by[it.ex]||[]).push({t:tsOf(l.date),y:Math.round(e),w:Math.max(...it.sets.filter(x=>x.w).map(x=>x.w))})}}
+  for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift"){
+    const ss=(it.sets||[]).filter(x=>x.w&&x.r);if(!ss.length)continue;
+    const top=ss.reduce((a,x)=>x.w>a.w||(x.w===a.w&&x.r>a.r)?x:a);
+    (by[it.ex]=by[it.ex]||[]).push({t:tsOf(l.date),w:top.w,r:top.r,v:Math.round(ss.reduce((a,x)=>a+x.w*x.r,0))});
+  }
   const names=Object.keys(by).sort((a,b)=>by[b][by[b].length-1].t-by[a][by[a].length-1].t||a.localeCompare(b));
   if(!names.length)return `<section class="card"><div class="muted">Log some lifts in a session and your strength curves show up here.</div></section>`;
   const sel=names.includes(liftSel)?liftSel:names[0],pts=by[sel].sort((a,b)=>a.t-b.t);
   return `<section class="card"><select data-a="lift-sel" aria-label="Exercise">${names.map(n=>`<option ${n===sel?"selected":""}>${esc(n)}</option>`).join("")}</select>
-    <span class="eyebrow">Estimated 1RM (kg)</span>${lineChart(pts,{unit:" kg",label:"Estimated one-rep max"})}
-    <span class="eyebrow">Heaviest weight (kg)</span>${lineChart(pts.map(p=>({t:p.t,y:p.w})),{color:"var(--pull)",unit:" kg",label:"Heaviest weight"})}</section>`;
+    <span class="eyebrow">Heaviest set (kg × reps)</span>${lineChart(pts.map(p=>({t:p.t,y:p.w})),{labels:pts.map(p=>`${p.w}×${p.r}`),label:"Heaviest set"})}
+    <span class="eyebrow">Total volume per session (kg lifted)</span>${lineChart(pts.map(p=>({t:p.t,y:p.v})),{color:"var(--pull)",unit:" kg",label:"Total volume"})}
+    <div class="muted small">The first chart shows your heaviest set with its reps. Volume is weight × reps added up over all sets, so 5 × 30 kg is not automatically better than 10 × 20 kg here; it depends on how many sets you did.</div></section>`;
 }
 function anBody(){
   const ws=LOGS.filter(l=>l.type==="weight").slice().sort((a,b)=>a.ts-b.ts),pts=ws.map(l=>({t:tsOf(l.date),y:l.kg})),h=S.metrics.height;
@@ -824,7 +829,7 @@ function skillRecords(){
 function viewRecords(){
   const rec=skillRecords();
   const prs=[];
-  for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift")for(const x of it.sets||[])if(x.w&&x.r){const e=Math.round(x.w*(1+x.r/30)),c=prs.find(q=>q.n===it.ex);if(!c)prs.push({n:it.ex,w:x.w,r:x.r,e,date:l.date});else if(e>c.e)Object.assign(c,{w:x.w,r:x.r,e,date:l.date})}
+  for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift")for(const x of it.sets||[])if(x.w&&x.r){const c=prs.find(q=>q.n===it.ex);if(!c)prs.push({n:it.ex,w:x.w,r:x.r,date:l.date});else if(x.w>c.w||(x.w===c.w&&x.r>c.r))Object.assign(c,{w:x.w,r:x.r,date:l.date})}
   prs.sort((a,b)=>a.n.localeCompare(b.n));
   const hd=S.hang.d||{},hl=(v,d)=>`${v??"–"} s${d?` <span class="muted small">${fmtDate(d)}</span>`:""}`;
   return `<section class="card"><span class="eyebrow">Priority skill</span>
@@ -846,8 +851,8 @@ function viewRecords(){
     <div class="row between"><span class="muted">Two-arm</span><b>${hl(S.hang.two,hd.two)}</b></div>
     <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Left, s" id="hang-L"><input type="number" inputmode="numeric" placeholder="Right, s" id="hang-R"><input type="number" inputmode="numeric" placeholder="2-arm, s" id="hang-2"></div>
     <div><button class="btn sm" data-a="hang-test">Save hangs</button></div></section>
-  <section class="card"><h3>Lift records</h3><div class="muted small">Best set per exercise, with an estimated one-rep max.</div>
-    ${prs.length?prs.map(q=>`<div class="row between"><span>${esc(q.n)}<br><span class="muted small">${fmtDate(q.date)}</span></span><span style="text-align:right"><b>${q.w} kg × ${q.r}</b><br><span class="muted small">1RM ≈ ${q.e} kg</span></span></div>`).join("<hr>"):'<div class="muted small">Shows up here after your first sessions.</div>'}</section>`;
+  <section class="card"><h3>Lift records</h3><div class="muted small">Heaviest set per exercise.</div>
+    ${prs.length?prs.map(q=>`<div class="row between"><span>${esc(q.n)}<br><span class="muted small">${fmtDate(q.date)}</span></span><b>${q.w} kg × ${q.r}</b></div>`).join("<hr>"):'<div class="muted small">Shows up here after your first sessions.</div>'}</section>`;
 }
 /* ---------- Programs (edit here: days -> exercises) ----------
    Shown exactly as written in the Programs page. Extra fields used only by "Load into session":
@@ -1123,7 +1128,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v14"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v15"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
