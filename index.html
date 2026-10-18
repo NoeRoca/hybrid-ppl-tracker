@@ -161,6 +161,8 @@ nav.tabs{background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-f
 nav.tabs button{font-family:var(--body);font-weight:700;font-size:12px;letter-spacing:.04em}
 nav.tabs button.on{color:var(--ink);border-top-color:var(--accent)}
 .sheet>div{border-radius:24px 24px 0 0}
+.badge{font-weight:800;font-size:13px;padding:2px 8px;border-radius:99px;background:var(--sunk)}
+.badge.E{color:var(--ok)}.badge.J{color:var(--muted)}
 .cal .d{border:0;color:var(--muted);background:radial-gradient(circle,var(--surface) 58%,transparent 59%),conic-gradient(var(--track) 0 100%)}
 .cal .d.full{background:radial-gradient(circle,var(--surface) 58%,transparent 59%),conic-gradient(#FA114F,#FF9F0A,#92E82A,#FA114F);color:var(--ink)}
 .cal .d.half{background:radial-gradient(circle,var(--surface) 58%,transparent 59%),conic-gradient(var(--accent) 0 50%,var(--track) 0);color:var(--ink)}
@@ -367,7 +369,7 @@ function puLogTotal(l){ if(l.day==="pyramid")return (l.ladders||[]).reduce((a,x)
 
 /* ================= VIEWS ================= */
 let session=migrateDraft(lsGet("hybrid-ppl-draft")), tab="today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
-let psub="pullups", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null, editHeight=false, progSplit="push";
+let psub="pullups", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null, editHeight=false, progDay=null;
 const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
 const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine",run:"Log a run"};
 function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${(tab==="routine"||tab==="run"?"today":tab)===k?"on":""}">${n}</button>`).join("")}
@@ -380,9 +382,9 @@ function render(){
   const now=new Date();
   $("#hdr-date").textContent=now.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
   const m=$("#main");
-  if(session&&tab==="session"){ $("#hdr-title").textContent=SPLITS[session.split].name+" session"; m.innerHTML=viewSession(); restoreDetails(); return; }
+  if(session&&tab==="session"){ $("#hdr-title").textContent=(session.day||SPLITS[session.split].name)+" session"; m.innerHTML=viewSession(); restoreDetails(); return; }
   if(tab==="session")tab="today";
-  $("#hdr-title").textContent=tab==="more"&&moreSub?({measure:"Measurements",records:"Records",backup:"Backup",program:"Program"})[moreSub]:TITLES[tab];
+  $("#hdr-title").textContent=tab==="more"&&moreSub?({measure:"Measurements",records:"Records",backup:"Backup",program:"Programs"})[moreSub]:TITLES[tab];
   m.innerHTML=({today:viewToday,progress:viewProgress,more:viewMore,routine:viewRoutine,run:viewRunScreen})[tab]();
   restoreDetails();
 }
@@ -755,53 +757,128 @@ function viewRecords(){
   <section class="card"><h3>Lift records</h3><div class="muted small">Best set per exercise, with an estimated one-rep max.</div>
     ${prs.length?prs.map(q=>`<div class="row between"><span>${esc(q.n)}<br><span class="muted small">${fmtDate(q.date)}</span></span><span style="text-align:right"><b>${q.w} kg × ${q.r}</b><br><span class="muted small">1RM ≈ ${q.e} kg</span></span></div>`).join("<hr>"):'<div class="muted small">Shows up here after your first sessions.</div>'}</section>`;
 }
-const WHY={
-  skill:"Planche is on Push and front lever on Legs to spread elbow and lat load away from the pull-up program.",
-  rdl:"Hinge pattern, part of the hip, pelvis and posture focus.",split:"Single-leg work, part of the hip and pelvis focus.",
-  calf:"Shin care: calves and tibialis every Legs day.",tib:"Shin care: calves and tibialis every Legs day.",
-  t1:"Arms are a priority, so they are never cut.",t2:"Arms are a priority, so they are never cut.",b1:"Arms are a priority, so they are never cut.",b2:"Arms are a priority, so they are never cut.",
-  oah:"One-arm hangs per side on Pull and Legs days.",grip:"Thick-bar hangs on Push day.",
+/* ---------- Programs (edit here: days -> exercises) ----------
+   Shown exactly as written in the Programs page. Extra fields used only by "Load into session":
+   n = sets to prefill, kind = lift | reps | hold, side = per-side sets, skill = existing skill slot, key = special slot id. */
+const X=(name,n,sets,reps,rest,why,tag,more)=>({name,n,sets,reps,rest,why,tag,...more});
+const PROGRAMS={
+  general:[
+    "Badges: [E] = direct research behind the choice. [J] = judgment call / common practice.",
+    "Effort: stop 1–2 reps before failure on most sets. Last set of isolation exercises can go to failure.",
+    "Progression (double progression): when you hit the top of the rep range on every set, add weight next time and drop back to the bottom of the range.",
+    "Compounds: do 1–2 lighter warm-up sets first (not counted).",
+    "Order: skill work first while fresh, then heavy compounds, then isolation, then core.",
+    "Rotation: Push A → Pull A → Legs A → Push B → Pull B → Legs B.",
+    "Each session is roughly 60–75 min without pull-ups. If short on time, cut the exercises marked \"optional\" first.",
+  ],
+  pullups:[
+    "Pull-ups always come first in the session.",
+    "Max day (~15 min): fine on any day; do the sets during rest periods of Push or Legs if you want to save time.",
+    "Density day (~12 min): fine on any day.",
+    "Pyramid day (~25–30 min): best on a Legs day. If it lands on a Pull day, drop the second row exercise.",
+    "While the pull-up program runs, Pull days have no lat pulldowns or extra pull-ups: the program already covers vertical pulling.",
+  ],
+  days:[
+    {id:"pushA",name:"Push A",split:"push",emphasis:"Chest / horizontal pressing",ex:[
+      X("Planche holds (priority skill)",0,"6 holds","target","rest 2 min","Skills need freshness and a straight-arm, low-fatigue start.","J",{skill:"planche"}),
+      X("Bench press",3,"3–4","5–8","rest 2–3 min","Main heavy press for chest and triceps; easiest lift to load progressively.","J"),
+      X("Weighted dips",3,"3","6–10","rest 2 min","Trains chest and triceps in a deep stretch; builds strength on the same bars you use for skills.","J"),
+      X("Incline dumbbell press",3,"3","8–12","rest 90 s","Covers the upper chest, which flat pressing hits less.","J"),
+      X("Cable fly (optional)",2,"2–3","12–15","rest 60–90 s","Extra chest volume with constant tension and a loaded stretch.","J"),
+      X("Cable lateral raise",3,"3","12–20","rest 60 s","Side delts get little from pressing; small muscle that recovers fast, so train it every push day.","J"),
+      X("Overhead cable triceps extension",3,"3","10–15","rest 75 s","Trains the long head of the triceps in a stretched position; one study found more triceps growth than pushdowns.","E"),
+      X("Ab wheel",3,"3","8–12","rest 60 s","Anti-extension core: teaches you to keep the pelvis tucked under load, relevant for pelvic tilt and planche.","J",{kind:"reps"}),
+    ]},
+    {id:"pushB",name:"Push B",split:"push",emphasis:"Shoulders / vertical pressing",ex:[
+      X("Handstand practice",0,"","8–10 min","as needed","Balance skill, done fresh after a wrist warm-up.","J",{skill:"handstand",dose:"8–10 min"}),
+      X("Planche leans (maintenance)",3,"3","15–20 s","rest 90 s","Keeps planche-specific shoulder and wrist strength between priority sessions.","J",{kind:"hold",key:"leans"}),
+      X("Standing overhead press",3,"3–4","5–8","rest 2–3 min","Main vertical press; strengthens shoulders in the overhead position used in handstands.","J"),
+      X("Machine chest press or dumbbell bench press",3,"3","8–12","rest 90 s","Keeps chest volume up on the shoulder day with less fatigue than barbell bench.","J"),
+      X("Dumbbell lean-away lateral raise",3,"3","12–20","rest 60 s","Side delts again, with more tension at the bottom of the movement than a standard raise.","J"),
+      X("EZ-bar skull crusher",3,"3","8–12","rest 75 s","Heavier triceps work with the arm partly overhead, which stretches the long head.","J"),
+      X("Rope pushdown (optional)",2,"2–3","10–15","rest 60 s","Extra triceps volume, easy on the elbows.","J"),
+      X("Hollow body hold",3,"3","20–40 s","rest 60 s","The exact body position for planche and front lever; trains anti-extension.","J",{kind:"hold"}),
+    ]},
+    {id:"pullA",name:"Pull A",split:"pull",emphasis:"Heavy rows / back thickness",ex:[
+      X("Barbell row or chest-supported row",3,"3–4","6–8","rest 2–3 min","Heavy horizontal pulling for upper back thickness; balances all the pressing.","J"),
+      X("One-arm dumbbell row",3,"3","8–12","rest 90 s","Full stretch at the bottom and one side at a time, so a weaker side can't hide.","J"),
+      X("Face pull",3,"3","12–15","rest 60 s","Rear delts and shoulder external rotators: the upper-back muscles behind rounded-shoulder posture.","J"),
+      X("Incline dumbbell curl",3,"3","8–12","rest 75 s","Biceps trained in a stretched position (arm behind the body); training at long lengths tends to favor growth.","E"),
+      X("Hammer curl",3,"3","10–12","rest 60 s","Brachialis and forearm: adds arm thickness and helps grip.","J"),
+      X("Hanging leg raise (curl the pelvis up at the top)",3,"3","8–12","rest 60 s","Lower abs and pelvic control; the pelvis curl makes it an ab exercise, not just a hip-flexor one.","J",{kind:"reps"}),
+      X("One-arm dead hang",3,"3 per side","near max","rest 60 s","Grip and single-arm hang goal.","J",{kind:"hold",side:true,key:"oah",dose:"3 per side, near max"}),
+    ]},
+    {id:"pullB",name:"Pull B",split:"pull",emphasis:"Light rows / arms / posture",ex:[
+      X("Seated cable row (neutral grip)",3,"3","10–12","rest 90 s","Lighter back volume; squeeze the shoulder blades together at the end of each rep.","J"),
+      X("Reverse pec deck or cable rear delt fly",3,"3","15–20","rest 60 s","Rear delts for shoulder balance and posture.","J"),
+      X("Prone Y-raise (on an incline bench) (optional)",2,"2–3","12–15","rest 60 s","Lower traps: the muscles that pull the shoulders down and back.","J"),
+      X("Bayesian cable curl (cable behind you)",3,"3","10–15","rest 75 s","Biceps loaded hardest in the stretched position.","E"),
+      X("Preacher curl",3,"3","8–12","rest 75 s","Strict biceps work, hard at the bottom; no swinging possible.","J"),
+      X("Reverse curl",2,"2","12–15","rest 60 s","Forearm extensors and brachioradialis; balances all the gripping.","J"),
+      X("Cable crunch",3,"3","10–15","rest 60 s","Loadable ab flexion, so the abs can be progressed like any muscle.","J"),
+      X("Thick-bar hang",2,"2","near max","rest 90 s","Grip and forearms.","J",{kind:"hold"}),
+    ]},
+    {id:"legsA",name:"Legs A",split:"legs",emphasis:"Squat focus",ex:[
+      X("Front lever holds",0,"6 holds (priority) or 3 holds (maintenance)","target","rest 2 min","Placed on leg day so it doesn't compete with the pull-up program for back and elbows.","J",{skill:"frontlever"}),
+      X("Back squat or hack squat, full depth",3,"3–4","5–8","rest 2–3 min","Main quad and glute builder; full depth also trains hip mobility under load.","J"),
+      X("Romanian deadlift (moderate)",2,"2–3","8–10","rest 2 min","Hinge pattern for hamstrings and glutes; a strong posterior chain supports the pelvis and lower back.","J"),
+      X("Seated leg curl",3,"3","8–12","rest 75 s","Seated curls trained hamstrings at longer length and grew them more than lying curls in a direct comparison study.","E"),
+      X("Leg extension",3,"3","10–15","rest 75 s","Isolates the quads, including the rectus femoris that squats train less.","J"),
+      X("Adductor machine (full stretch) (optional)",2,"2–3","10–15","rest 60 s","Inner thighs and hip mobility under load.","J"),
+      X("Standing calf raise (pause at the bottom)",3,"3","8–12","rest 60 s","Calves; the pause removes the bounce and loads the stretch.","J"),
+      X("Tibialis raise",3,"3","15–20","rest 45 s","Strengthens the front of the shin; prescribed for shin splints.","J"),
+      X("Pallof press",2,"2","10 per side","rest 45 s","Anti-rotation core: resisting twisting stabilizes the spine and pelvis.","J",{kind:"reps",side:true}),
+    ]},
+    {id:"legsB",name:"Legs B",split:"legs",emphasis:"Hinge focus",ex:[
+      X("Front lever holds",0,"same as Legs A","","rest 2 min","Same reasoning as Legs A.","J",{skill:"frontlever",dose:"same as Legs A"}),
+      X("Romanian deadlift (heavy)",3,"3–4","6–10","rest 2–3 min","Main posterior-chain builder: hamstrings, glutes, lower-back endurance.","J"),
+      X("Hip thrust",3,"3","8–12","rest 2 min","Glutes in their shortened position; strong glutes help control pelvic tilt.","J"),
+      X("Bulgarian split squat",3,"3","8–10 per side","rest 90 s","One leg at a time: shows and corrects left/right differences; stretches the hip flexor of the back leg.","J",{side:true}),
+      X("Nordic curl",3,"3","4–8","rest 2 min","Eccentric hamstring work; strong evidence it reduces hamstring injuries in athletes.","E",{kind:"reps"}),
+      X("Sissy squat or leg extension (optional)",2,"2","12–15","rest 60 s","Quad isolation, knees far forward.","J"),
+      X("Copenhagen plank",2,"2","20–30 s per side","rest 60 s","Adductor strength; shown to reduce groin injuries in football players.","E",{kind:"hold",side:true}),
+      X("Seated calf raise + tibialis raise",3,"3","12–15 each","rest 45 s","Seated targets the deeper calf muscle (soleus); tibialis for the shins.","J"),
+      X("Side plank",2,"2","30–45 s per side","rest 45 s","Lateral core and hip stability.","J",{kind:"hold",side:true}),
+    ]},
+  ],
 };
-const COREWHY={push:"Anti-extension core on Push.",pull:"Leg raises or crunches on Pull.",legs:"Anti-rotation core on Legs."};
-function estMin(k){
-  let sec=0;
-  for(const sl of PROGRAM[k]){
-    if(sl.kind==="skill"){const n=holdCount(sl.skill);sec+=n*10+(n-1)*120+60;continue}
-    const n=sl.side?sl.sets*2:sl.sets,work=sl.kind==="hold"?25:45;
-    sec+=n*work+(n-1)*(sl.rest||90)+60;
-  }
-  return Math.round(sec/60);
+function doseOf(e){return e.dose||(e.sets&&e.reps?`${e.sets} × ${e.reps}`:(e.sets||e.reps))}
+function loadProgramDay(id){
+  const d=PROGRAMS.days.find(x=>x.id===id);if(!d)return;
+  const ns=newSession(d.split);ns.day=d.name;
+  d.ex.forEach(e=>{
+    const sid=uid()+ns.order.length;
+    if(e.skill)ns.slots[sid]=makeSlot({skill:e.skill});
+    else{const m=/^(\d+)–(\d+)$/.exec(e.reps),kind=e.kind||"lift";
+      ns.slots[sid]=makeSlot({n:e.name,k:kind,cat:d.name,key:e.key||"prog",sets:e.n,range:e.reps,side:!!e.side,lo:kind==="lift"&&m?+m[1]:undefined,hi:kind==="lift"&&m?+m[2]:undefined,rest:90})}
+    ns.order.push(sid);
+  });
+  session=ns;pick=null;tab="session";confirmKey=null;saveDraft();render();window.scrollTo(0,0);
 }
-function puEst(){
-  const p=S.pu.ladderPeak;
-  return {max:Math.round((3*30+2*300)/60),density:Math.round((10*35+9*60)/60),pyramid:Math.round((5*(2*p-1)*38+4*60)/60)};
+function exCard(e){
+  return `<section class="card"><div class="row between"><b>${esc(e.name)}</b><span class="badge ${e.tag}">[${e.tag}]</span></div>
+    <div class="dose">${esc(doseOf(e))} <span class="muted small">· ${esc(e.rest)}</span></div>
+    <div class="muted small">${esc(e.why)}</div></section>`;
 }
-function viewProgramPage(){
-  const k=progSplit,w=WARM[k];
-  return `<section class="card"><div class="muted small">You rotate Push, Pull, Legs, about 5 days a week, with no fixed weekdays. Pull-ups come first every other day (see Progress). This is the recommended plan. In a session you add exercises yourself, so use it as a guide.</div></section>
-  <div class="seg" role="group" aria-label="Day">${ORDER.map(x=>`<button class="${k===x?"on":""}" data-a="prog-split" data-k="${x}">${SPLITS[x].name}</button>`).join("")}</div>
-  <section class="card"><span class="eyebrow">Time estimate</span>
-    <div class="row between"><span>Exercises, as written</span><b>about ${estMin(k)} min</b></div>
-    <div class="row between"><span>Warm-up</span><b>about 8 min</b></div>
-    <div class="row between"><span>Pull-ups first (every other day)</span><b>${puEst().max}–${puEst().pyramid} min</b></div>
-    <div class="muted small">Rough sums of sets, rests and about 1 min between exercises. Pull-ups: max ${puEst().max}, density ${puEst().density}, pyramid ${puEst().pyramid} min. Your target is 1h–1h15, so on a pull-up day the full list runs long and the skip order below applies.</div>
-    ${(()=>{const c=PROGRAM[k].filter(x=>x.cut).sort((a,b)=>a.cut-b.cut);return c.length?`<div class="small"><b>Short on time? Skip in this order:</b> ${c.map(x=>esc(x.label.replace(/ · .*/,""))).join(", then ")}.</div>`:""})()}</section>
-  <section class="card edge" style="--c:${cvar(k)}"><h3>${SPLITS[k].name} day</h3>
-  ${PROGRAM[k].map(sl=>sl.kind==="skill"?`<div><b>${SKILLS[sl.skill].name} (skill)</b><div class="muted small">First. 6 holds if it's your priority skill, otherwise 3.</div>${k!=="pull"?`<div class="small" style="margin-top:2px">${esc(WHY.skill)}</div>`:""}</div>`
-    :`<div><div class="row between"><b>${esc(sl.label)}</b><span class="dose">${sl.sets}${sl.side?"/side":""} × ${esc(sl.range)}</span></div><div class="muted small">${sl.opts.map(o=>esc(o.n||o)).join(" · ")}</div>${(sl.id==="core"?COREWHY[k]:WHY[sl.id])?`<div class="small" style="margin-top:2px">${esc(sl.id==="core"?COREWHY[k]:WHY[sl.id])}</div>`:""}</div>`).join("<hr>")}
-  </section>
-  <section class="card"><span class="eyebrow">Warm-up ideas</span><ul class="muted small" style="margin:0;padding-left:18px">${[...w,...WARM.all].map(x=>`<li>${esc(x)}</li>`).join("")}</ul></section>`;
+function viewPrograms(){
+  const day=PROGRAMS.days.find(d=>d.id===progDay);
+  if(day)return `<section class="card edge" style="--c:${cvar(day.split)}"><span class="eyebrow">${esc(SPLITS[day.split].name)} day</span><h2>${esc(day.name)}</h2><div class="muted">${esc(day.emphasis)}</div></section>
+  ${day.ex.map(exCard).join("")}
+  <button class="btn big" data-a="load-prog" data-k="${day.id}">${session&&confirmKey==="load-"+day.id?"Tap again to replace the session in progress":"Load into session"}</button>`;
+  return `<details class="card"><summary><b>General rules</b></summary><ul class="muted small" style="margin:8px 0 0;padding-left:18px">${PROGRAMS.general.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></details>
+  <details class="card"><summary><b>Pull-up day adjustments</b></summary><ul class="muted small" style="margin:8px 0 0;padding-left:18px">${PROGRAMS.pullups.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></details>
+  ${PROGRAMS.days.map(d=>`<button class="btn" style="display:flex;justify-content:space-between;align-items:center;text-align:left;min-height:60px;border-left:6px solid ${cvar(d.split)}" data-a="prog-day" data-k="${d.id}"><span><b>${esc(d.name)}</b><br><span class="muted small">${esc(d.emphasis)}</span></span><span class="muted">›</span></button>`).join("")}`;
 }
 function viewMore(){
   if(moreSub==="measure")return `<div class="stack">${backBtn()}${viewMeasure()}</div>`;
   if(moreSub==="records")return `<div class="stack">${backBtn()}${viewRecords()}</div>`;
-  if(moreSub==="program")return `<div class="stack">${backBtn()}${viewProgramPage()}</div>`;
+  if(moreSub==="program")return `<div class="stack">${progDay?`<div><button class="btn sm ghost" data-a="prog-day" data-k="">‹ All programs</button></div>`:backBtn()}${viewPrograms()}</div>`;
   if(moreSub==="backup")return `<div class="stack">${backBtn()}${backupCard()}</div>`;
   const w=lastOf("weight");
   const row=(k,t,d)=>`<button class="btn" style="display:flex;justify-content:space-between;align-items:center;text-align:left;min-height:56px" data-a="more-go" data-k="${k}"><span><b>${t}</b><br><span class="muted small">${d}</span></span><span class="muted">›</span></button>`;
   return `<div class="stack">
   ${row("measure","Measurements",w?`${w.kg} kg on ${fmtDate(w.date)}${S.metrics.height?` · ${S.metrics.height} cm`:""}`:"Body weight and height")}
-  ${row("program","Program","The recommended Push, Pull and Legs plan")}
+  ${row("program","Programs","Push A/B, Pull A/B, Legs A/B")}
   ${row("records","Records","Skill holds and lift max strength")}
   ${row("backup","Backup and restore","Keep your data safe")}
   <div class="muted small" style="text-align:center">App version ${APP_VERSION}</div>
@@ -824,13 +901,14 @@ document.addEventListener("change",e=>{
 });
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-a]");if(!b||b.tagName==="SELECT")return;const a=b.dataset.a;
-  if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&a!=="item-rm"&&!a.startsWith("del"))confirmKey=null;
+  if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&a!=="item-rm"&&a!=="load-prog"&&!a.startsWith("del"))confirmKey=null;
   switch(a){
     case "tab":if(b.dataset.k==="more")moreSub=null;tab=b.dataset.k;render();window.scrollTo(0,0);break;
     case "noop":break;
-    case "prog-split":progSplit=b.dataset.k;render();break;
+    case "prog-day":progDay=b.dataset.k||null;confirmKey=null;render();window.scrollTo(0,0);break;
+    case "load-prog":{const id=b.dataset.k;if(session&&confirmKey!=="load-"+id){confirmKey="load-"+id;render();break}loadProgramDay(id);break}
     case "records-go":tab="more";moreSub="records";render();window.scrollTo(0,0);break;
-    case "more-go":moreSub=b.dataset.k||null;render();window.scrollTo(0,0);break;
+    case "more-go":moreSub=b.dataset.k||null;progDay=null;render();window.scrollTo(0,0);break;
     case "pick-open":pick={cat:catOrder(session.split)[0]};render();break;
     case "pick-close":pick=null;render();break;
     case "pick-cat":pick.cat=b.dataset.k;render();break;
@@ -939,7 +1017,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v9"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v10"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;

@@ -24,6 +24,9 @@ This repo is public: never add personal health details, real names of other peop
 
 ## The program (why the app works this way)
 
+**Programs tab (More → Programs)** holds the current 6-day plan (Push A/B, Pull A/B, Legs A/B) as the `PROGRAMS` data object in `index.html`: name, sets, reps, rest, why, [E]/[J] tag per exercise. Display text exactly as written, edit the data, not the markup. "Load into session" prefills a session (names and set counts; skills use the existing skill slots). The rotation Push A → Pull A → Legs A → Push B → Pull B → Legs B is in the general rules; the app's `nextSplit` rotation is still Push → Pull → Legs and does not track A/B. The older single-day `PROGRAM` constant only feeds the exercise picker catalog and old drafts, so leave it. The older notes below describe the original plan and the reasons behind the pull-up, skill, mobility and running logic, which still apply.
+
+
 Trains ~5 days/week, 1h–1h15, no fixed weekdays. Push → Pull → Legs rotates in order whenever he trains (`state.nextSplit`). Sessions are **free-form**: the session starts empty and Noé adds exercises as he goes from a catalog (categories: Chest, Shoulders, Triceps, Back, Biceps, Legs, Core, Skills & holds; he can add his own). The catalog is built from the old slot options in `PROGRAM` plus a few extras. History is tracked per exercise name, so never rename existing exercises. The warm-up is only a collapsed list of ideas, nothing to tick.
 
 ### Pull-up program (K Boges, derived from the USMC Armstrong program)
