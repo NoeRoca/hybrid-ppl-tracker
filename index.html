@@ -267,6 +267,7 @@ const DEFAULT_STATE = {
   skills:{planche:{level:0,baseline:null,target:null},frontlever:{level:0,baseline:null,target:null},handstand:{level:0,baseline:null,target:null}},
   hang:{L:null,R:null},
   metrics:{height:null},
+  flags:{},
   custom:{},
 };
 // Your weeks 1–3 from your notes. Exact dates unknown, so they are spaced every other day.
@@ -333,6 +334,14 @@ function loadLocal(){
   const d=lsGet(LKEY);
   if(d&&d.state){S=Object.assign(clone(DEFAULT_STATE),d.state);LOGS=d.logs||[];}
   else{S=clone(DEFAULT_STATE);LOGS=clone(SEED_LOGS);lsSet(LKEY,{state:S,logs:LOGS});}
+  if(migrate())lsSet(LKEY,{state:S,logs:LOGS});
+}
+// One-time: your last pull-up day was the 17th, so move the notes-based weeks 1-3 back by one day (later).
+function migrate(){
+  S.flags=S.flags||{};
+  if(S.flags.seedShift1)return false;
+  for(const l of LOGS)if(String(l.id).startsWith("seed-")){const d=new Date(l.date+"T12:00:00");d.setDate(d.getDate()+1);l.date=dstr(d);l.ts=(l.ts||0)+864e5}
+  S.flags.seedShift1=true;sortLogs();return true;
 }
 let needRender=false;
 function softRender(){const a=document.activeElement; if(a&&(a.tagName==="INPUT"||a.tagName==="SELECT"||a.tagName==="TEXTAREA")){needRender=true;return} render();}
@@ -487,7 +496,7 @@ const CAT_FIRST={push:["Chest","Shoulders","Triceps","Core","Skills & holds"],pu
 const CAT_OF={c1:"Chest",c2:"Shoulders",lat:"Shoulders",t1:"Triceps",t2:"Triceps",r1:"Back",r2:"Back",fp:"Back",rd:"Back",b1:"Biceps",b2:"Biceps",sq:"Legs",rdl:"Legs",split:"Legs",curl:"Legs",quad:"Legs",add:"Legs",calf:"Legs",tib:"Legs",core:"Core",leans:"Skills & holds",grip:"Skills & holds",oah:"Skills & holds"};
 const EXTRAS=[
   ["Dumbbell bench press","Chest","lift"],["Incline dumbbell press","Chest","lift"],["Pec fly (machine)","Chest","lift"],["Cable fly","Chest","lift"],["Push-up","Chest","reps"],
-  ["Close-grip bench press","Triceps","lift"],["Hip thrust","Legs","lift"],["Walking lunge","Legs","lift"],
+  ["Close-grip bench press","Triceps","lift"],["Hip thrust","Legs","lift"],["Walking lunge","Legs","lift"],["Two-arm dead hang","Skills & holds","hold","tah"],
 ];
 function catOrder(k){const f=CAT_FIRST[k]||[];return f.concat(CATS.filter(c=>!f.includes(c)))}
 function catalog(){
@@ -496,7 +505,7 @@ function catalog(){
     if(sl.kind==="skill")continue;
     for(const o of optsFor(sp,sl))if(!m.has(o.n))m.set(o.n,{n:o.n,k:o.k,cat:CAT_OF[sl.id]||"Chest",key:sl.id,lo:sl.lo,hi:sl.hi,rest:sl.rest,side:sl.side,sets:sl.sets,range:sl.range});
   }
-  for(const [n,cat,k] of EXTRAS)if(!m.has(n))m.set(n,{n,k,cat,key:"x",sets:3,range:k==="lift"?"8–12":"",rest:90,lo:k==="lift"?8:undefined,hi:k==="lift"?12:undefined});
+  for(const [n,cat,k,key] of EXTRAS)if(!m.has(n))m.set(n,{n,k,cat,key:key||"x",sets:3,range:k==="lift"?"8–12":"",rest:90,lo:k==="lift"?8:undefined,hi:k==="lift"?12:undefined});
   for(const c of (S.custom.mine||[]))if(!m.has(c.n))m.set(c.n,{n:c.n,k:c.k,cat:c.cat,key:"mine",sets:3,range:"",rest:90});
   for(const key of Object.keys(SKILLS))m.set(SKILLS[key].name+" (skill)",{n:SKILLS[key].name+" (skill)",cat:"Skills & holds",skill:key});
   return [...m.values()];
@@ -748,12 +757,22 @@ function viewRecords(){
   const prs=[];
   for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift")for(const x of it.sets||[])if(x.w&&x.r){const e=Math.round(x.w*(1+x.r/30)),c=prs.find(q=>q.n===it.ex);if(!c)prs.push({n:it.ex,w:x.w,r:x.r,e,date:l.date});else if(e>c.e)Object.assign(c,{w:x.w,r:x.r,e,date:l.date})}
   prs.sort((a,b)=>a.n.localeCompare(b.n));
-  return `${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],rows=SKILLS[k].levels.map(lv=>[lv,rec[SKILLS[k].name+" · "+lv]]).filter(r=>r[1]);
-    return `<section class="card"><div class="row between"><h3>${SKILLS[k].name}</h3><span class="muted small">now: ${SKILLS[k].levels[sk.level]}${sk.baseline?` · target ${holdTarget(k)} s`:""}</span></div>
-    ${rows.length?rows.map(([lv,r])=>`<div class="row between"><span>${lv}</span><span><b>${r.s} s</b> <span class="muted small">${fmtDate(r.date)}</span></span></div>`).join(""):'<div class="muted small">Not tested yet.</div>'}
-    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="New max hold, seconds" id="sk-test-${k}"><button class="btn sm" data-a="sk-test" data-k="${k}">Save</button></div></section>`}).join("")}
-  <section class="card"><h3>One-arm hang</h3><div class="row between"><span class="muted">Left / Right</span><b>${S.hang.L??"–"} s / ${S.hang.R??"–"} s</b></div>
-    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Left, s" id="hang-L"><input type="number" inputmode="numeric" placeholder="Right, s" id="hang-R"><button class="btn sm" data-a="hang-test">Save</button></div></section>
+  const hd=S.hang.d||{},hl=(v,d)=>`${v??"–"} s${d?` <span class="muted small">${fmtDate(d)}</span>`:""}`;
+  return `${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],lv=SKILLS[k].levels,nm=SKILLS[k].name;
+    const rows=[];lv.forEach(l=>[l,l+" (banded)"].forEach(x=>{const r=rec[nm+" · "+x];if(r)rows.push([x,r])}));
+    return `<section class="card"><h3>${nm}</h3>
+    <div class="row between"><span class="muted">Training level</span><select data-a="lvl-set" data-k="${k}" style="width:auto" aria-label="Training level">${lv.map((l,i)=>`<option value="${i}" ${i===sk.level?"selected":""}>${l}</option>`).join("")}</select></div>
+    <div class="muted small">${sk.baseline?`Sessions use ${holdCount(k)} × ${holdTarget(k)} s at this level.`:"No record at this level yet, so your next session starts with a test."}</div>
+    ${rows.length?rows.map(([x,r])=>`<div class="row between"><span>${x}</span><span><b>${r.s} s</b> <span class="muted small">${fmtDate(r.date)}</span></span></div>`).join(""):'<div class="muted small">No records yet.</div>'}
+    <div class="muted small" style="margin-top:4px">Add a record (any level; a record at your training level also updates your hold target):</div>
+    <div class="row" style="flex-wrap:nowrap"><select id="rec-lvl-${k}" aria-label="Level">${lv.map((l,i)=>`<option value="${i}" ${i===sk.level?"selected":""}>${l}</option>`).join("")}</select><label class="small row" style="flex:none;gap:4px"><input type="checkbox" id="rec-band-${k}"> Banded</label></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Max hold, seconds" id="sk-test-${k}"><button class="btn sm" data-a="rec-save" data-k="${k}">Save</button></div></section>`}).join("")}
+  <section class="card"><h3>Hangs</h3>
+    <div class="row between"><span class="muted">One-arm, left</span><b>${hl(S.hang.L,hd.L)}</b></div>
+    <div class="row between"><span class="muted">One-arm, right</span><b>${hl(S.hang.R,hd.R)}</b></div>
+    <div class="row between"><span class="muted">Two-arm</span><b>${hl(S.hang.two,hd.two)}</b></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Left, s" id="hang-L"><input type="number" inputmode="numeric" placeholder="Right, s" id="hang-R"><input type="number" inputmode="numeric" placeholder="2-arm, s" id="hang-2"></div>
+    <div><button class="btn sm" data-a="hang-test">Save hangs</button></div></section>
   <section class="card"><h3>Lift records</h3><div class="muted small">Best set per exercise, with an estimated one-rep max.</div>
     ${prs.length?prs.map(q=>`<div class="row between"><span>${esc(q.n)}<br><span class="muted small">${fmtDate(q.date)}</span></span><span style="text-align:right"><b>${q.w} kg × ${q.r}</b><br><span class="muted small">1RM ≈ ${q.e} kg</span></span></div>`).join("<hr>"):'<div class="muted small">Shows up here after your first sessions.</div>'}</section>`;
 }
@@ -897,6 +916,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",e=>{
   const t=e.target;
+  if(t.dataset.a==="lvl-set"){const k=t.dataset.k;setSkillLevel(k,+t.value);render();toast(`Training ${SKILLS[k].levels[S.skills[k].level]}. `+(S.skills[k].baseline?`Target ${holdTarget(k)} s from your record.`:"Test it next session."));return}
   if(t.id==="import-file"&&t.files&&t.files[0]){const r=new FileReader();r.onload=()=>{importText=String(r.result||"");render()};r.readAsText(t.files[0]);return}
 });
 document.addEventListener("click",async e=>{
@@ -951,8 +971,13 @@ document.addEventListener("click",async e=>{
     case "home":await toggleHome(b.dataset.k);break;
     case "prio":S.priority=b.dataset.k;saveState();render();break;
     case "sk-test":{const k=b.dataset.k,v=num($("#sk-test-"+k).value);if(!v){toast("Enter your hold in seconds");break}await saveTest(k,v);render();toast("Test saved");break}
-    case "sk-level":{const k=b.dataset.k,sk=S.skills[k];sk.level=Math.min(SKILLS[k].levels.length-1,Math.max(0,sk.level+ +b.dataset.d));sk.baseline=null;sk.target=null;saveState();render();toast(`Now on ${SKILLS[k].levels[sk.level]}. Test it next session.`);break}
-    case "hang-test":{const l=num($("#hang-L").value),r=num($("#hang-R").value);if(l)S.hang.L=l;if(r)S.hang.R=r;saveState();render();toast("Saved");break}
+    case "sk-level":{const k=b.dataset.k;setSkillLevel(k,S.skills[k].level+ +b.dataset.d);render();toast(`Now on ${SKILLS[k].levels[S.skills[k].level]}. `+(S.skills[k].baseline?`Target ${holdTarget(k)} s from your record.`:"Test it next session."));break}
+    case "hang-test":{const l=num($("#hang-L").value),r=num($("#hang-R").value),t=num($("#hang-2").value);S.hang.d=S.hang.d||{};
+      if(l){S.hang.L=l;S.hang.d.L=today()}if(r){S.hang.R=r;S.hang.d.R=today()}if(t){S.hang.two=t;S.hang.d.two=today()}saveState();render();toast("Saved");break}
+    case "rec-save":{const k=b.dataset.k,v=num($("#sk-test-"+k).value);if(!v){toast("Enter your hold in seconds");break}
+      const li=+$("#rec-lvl-"+k).value,band=$("#rec-band-"+k).checked,cur=li===S.skills[k].level&&!band;
+      if(cur)await saveTest(k,v);else await putLog({id:uid(),type:"test",date:today(),ts:Date.now(),skill:SKILLS[k].name,level:SKILLS[k].levels[li]+(band?" (banded)":""),seconds:v});
+      render();toast(cur?"Record saved, hold target updated":"Record saved");break}
     case "run-shin":runDraft.shin=!runDraft.shin;render();break;
     case "run-save":{const km=num(runDraft.km);if(!km){toast("Enter the distance");break}
       await putLog({id:uid(),type:"run",date:runDraft.date||today(),ts:Date.parse((runDraft.date||today())+"T12:00:00"),km,min:num(runDraft.min),shin:runDraft.shin,note:runDraft.note.trim()});
@@ -964,11 +989,16 @@ document.addEventListener("click",async e=>{
     case "import-go":{let d;try{d=JSON.parse(importText)}catch{toast("That isn't valid backup JSON");break}
       if(!d||!d.state||!Array.isArray(d.logs)){toast("Backup must contain state and logs");break}
       if(confirmKey!=="import"){confirmKey="import";render();break}
-      confirmKey=null;S=Object.assign(clone(DEFAULT_STATE),d.state);LOGS=d.logs;sortLogs();lsSet(LKEY,{state:S,logs:LOGS});showImport=false;importText="";render();toast("Backup restored");break}
+      confirmKey=null;S=Object.assign(clone(DEFAULT_STATE),d.state);LOGS=d.logs;sortLogs();migrate();lsSet(LKEY,{state:S,logs:LOGS});showImport=false;importText="";render();toast("Backup restored");break}
     case "copy-export":{const box=$("#export-box");try{await navigator.clipboard.writeText(box.value);toast("Copied")}catch{box.focus();box.select();toast("Selected. Copy it manually.")}break}
   }
 });
 
+function setSkillLevel(k,i){
+  const sk=S.skills[k];sk.level=Math.min(SKILLS[k].levels.length-1,Math.max(0,i));
+  const r=skillRecords()[SKILLS[k].name+" · "+SKILLS[k].levels[sk.level]];
+  sk.baseline=r?r.s:null;sk.target=r?Math.max(2,Math.round(r.s*.7)):null;saveState();
+}
 async function saveTest(k,v){
   const sk=S.skills[k];sk.baseline=v;sk.target=Math.max(2,Math.round(v*.7));saveState();
   await putLog({id:uid(),type:"test",date:today(),ts:Date.now(),skill:SKILLS[k].name,level:SKILLS[k].levels[sk.level],seconds:v});
@@ -994,7 +1024,8 @@ async function finishSession(){
     const sets=st.sets.filter(s=>s.r!==""||s.s!==""||s.w!=="").map(s=>kind==="lift"?{w:num(s.w),r:num(s.r)}:kind==="hold"?{s:num(s.s)}:{r:num(s.r)});
     if(!sets.length)continue;
     items.push({slot:df.key,ex:st.ex,kind,sets});
-    if(df.key==="oah"){st.sets.forEach((s,i)=>{const v=num(s.s);if(!v)return;const side=i%2?"R":"L";if(v>(S.hang[side]||0))S.hang[side]=v})}
+    if(df.key==="oah"){st.sets.forEach((s,i)=>{const v=num(s.s);if(!v)return;const side=i%2?"R":"L";if(v>(S.hang[side]||0)){S.hang[side]=v;(S.hang.d=S.hang.d||{})[side]=today()}})}
+    if(df.key==="tah"){const m=Math.max(0,...st.sets.map(x=>num(x.s)||0));if(m>(S.hang.two||0)){S.hang.two=m;(S.hang.d=S.hang.d||{}).two=today()}}
   }
   if(!items.length){toast("Log at least one set before finishing");return}
   await putLog({id:uid(),type:"session",split:k,date:session.date,ts:Date.now(),min:Math.round((Date.now()-session.started)/60000),items});
@@ -1017,7 +1048,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v10"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v11"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
