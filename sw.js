@@ -1,11 +1,11 @@
 // Offline cache. Bump VERSION whenever index.html changes so phones pick up the new version.
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 const SHELL_CACHE = "shell-" + VERSION;
 const FONT_CACHE = "fonts-v1";
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(
@@ -28,7 +28,7 @@ self.addEventListener("fetch", e => {
   if (url.origin !== location.origin) return;
   // App pages: network first when online (to get updates), cache when offline.
   if (req.mode === "navigate") {
-    e.respondWith(fetch(req).then(r => {
+    e.respondWith(fetch(req, { cache: "no-cache" }).then(r => {
       caches.open(SHELL_CACHE).then(c => c.put("./index.html", r.clone()));
       return r;
     }).catch(() => caches.match("./index.html")));

@@ -325,7 +325,7 @@ function holdCount(k){return S.priority===k?6:3}
 function puLogTotal(l){ if(l.day==="pyramid")return (l.ladders||[]).reduce((a,x)=>a+(x.reps||0),0); return (l.sets||[]).reduce((a,x)=>a+(+x||0),0) }
 
 /* ================= VIEWS ================= */
-let session=migrateDraft(lsGet("hybrid-ppl-draft")), tab=session?"session":"today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
+let session=migrateDraft(lsGet("hybrid-ppl-draft")), tab="today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
 let psub="pullups", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null;
 const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
 const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine"};
@@ -716,6 +716,7 @@ function viewMore(){
   ${row("measure","Measurements",w?`${w.kg} kg on ${fmtDate(w.date)}${S.metrics.height?` · ${S.metrics.height} cm`:""}`:"Body weight and height")}
   ${row("records","Records","Skill holds and lift max strength")}
   ${row("backup","Backup and restore","Keep your data safe")}
+  <div class="muted small" style="text-align:center">App version ${APP_VERSION}</div>
   </div>`;
 }
 /* ================= EVENTS ================= */
@@ -848,7 +849,19 @@ async function savePullups(){
 }
 
 init();
-if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})})}
+const APP_VERSION="v6"; // keep in sync with VERSION in sw.js
+let hiddenAt=0;
+if("serviceWorker" in navigator){window.addEventListener("load",()=>{
+  let had=!!navigator.serviceWorker.controller, reloading=false;
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(had&&!reloading){reloading=true;location.reload()}had=true});
+  navigator.serviceWorker.register("sw.js").then(reg=>{
+    document.addEventListener("visibilitychange",()=>{
+      if(document.visibilityState==="hidden"){hiddenAt=Date.now();return}
+      reg.update().catch(()=>{});
+      if(hiddenAt&&Date.now()-hiddenAt>30*60*1000&&tab!=="today"){tab="today";render()}
+    });
+  }).catch(()=>{});
+})}
 </script>
 </body>
 </html>

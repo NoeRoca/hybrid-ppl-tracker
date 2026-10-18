@@ -16,6 +16,7 @@ This repo is public: never add personal health details, real names of other peop
 
 ## Workflow
 
+- `APP_VERSION` in `index.html` must match `VERSION` in `sw.js` (shown in More so Noé can check which version his phone runs).
 - Preview locally with `python3 -m http.server 8000` and check at phone width before pushing.
 - Commit, push to `main`; GitHub Pages redeploys. Phone updates the next time the app is opened online.
 - End every task with ONE message titled **FINAL REPORT**: what changed, files touched, the new `VERSION`, anything Noé must do on his phone. Noé finds long step-by-step output hard to scan.
