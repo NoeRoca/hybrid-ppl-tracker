@@ -956,6 +956,22 @@ function loadProgramDay(id){
   });
   session=ns;pick=null;tab="session";confirmKey=null;saveDraft();render();window.scrollTo(0,0);
 }
+function progNav(d){
+  const i=PROGRAMS.days.findIndex(x=>x.id===progDay)+d;
+  if(i<0||i>=PROGRAMS.days.length)return;
+  progDay=PROGRAMS.days[i].id;confirmKey=null;render();window.scrollTo(0,0);
+}
+let tx=0,ty=0;
+document.addEventListener("touchstart",e=>{const t=e.changedTouches[0];tx=t.clientX;ty=t.clientY},{passive:true});
+document.addEventListener("touchend",e=>{
+  if(!(tab==="more"&&moreSub==="program"&&progDay))return;
+  const t=e.changedTouches[0],dx=t.clientX-tx,dy=t.clientY-ty;
+  if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.6)progNav(dx<0?1:-1);
+},{passive:true});
+function pager(){
+  const D=PROGRAMS.days,i=D.findIndex(x=>x.id===progDay),pv=D[i-1],nx=D[i+1];
+  return `<div class="row between"><button class="btn sm" data-a="prog-nav" data-d="-1" style="background:var(--surface)" ${pv?"":"disabled"}>${pv?"‹ "+esc(pv.name):"‹"}</button><span class="row" style="gap:6px">${D.map((d,j)=>`<span style="width:8px;height:8px;border-radius:50%;background:${j===i?"var(--accent)":"var(--track)"}"></span>`).join("")}</span><button class="btn sm" data-a="prog-nav" data-d="1" style="background:var(--surface)" ${nx?"":"disabled"}>${nx?esc(nx.name)+" ›":"›"}</button></div>`;
+}
 function exCard(e){
   return `<section class="card"><div class="row between"><b>${esc(e.name)}</b><span class="badge ${e.tag}">[${e.tag}]</span></div>
     <div class="dose">${esc(doseOf(e))} <span class="muted small">· ${esc(e.rest)}</span></div>
@@ -964,6 +980,7 @@ function exCard(e){
 function viewPrograms(){
   const day=PROGRAMS.days.find(d=>d.id===progDay);
   if(day)return `<section class="card edge" style="--c:${cvar(day.split)}"><span class="eyebrow">${esc(SPLITS[day.split].name)} day</span><h2>${esc(day.name)}</h2><div class="muted">${esc(day.emphasis)}</div></section>
+  ${pager()}
   ${day.ex.map(exCard).join("")}
   <button class="btn big" data-a="load-prog" data-k="${day.id}">${session&&confirmKey==="load-"+day.id?"Tap again to replace the session in progress":"Load into session"}</button>`;
   return `<details class="card"><summary><b>General rules</b></summary><ul class="muted small" style="margin:8px 0 0;padding-left:18px">${PROGRAMS.general.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></details>
@@ -1010,6 +1027,7 @@ document.addEventListener("click",async e=>{
   switch(a){
     case "tab":if(b.dataset.k==="more")moreSub=null;tab=b.dataset.k;render();window.scrollTo(0,0);break;
     case "noop":break;
+    case "prog-nav":progNav(+b.dataset.d);break;
     case "fresh":if(confirmKey==="fresh"){freshStart()}else{confirmKey="fresh";render()}break;
     case "fresh-menu":if(confirmKey==="fresh"){freshStart()}else{confirmKey="fresh";render()}break;
     case "fresh-no":S.flags.freshAsked=true;saveState();confirmKey=null;render();break;
@@ -1151,7 +1169,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v17"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v18"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
