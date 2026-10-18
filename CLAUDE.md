@@ -22,7 +22,7 @@ This repo is public: never add personal health details, real names of other peop
 
 ## The program (why the app works this way)
 
-Trains ~5 days/week, 1h–1h15, no fixed weekdays. Push → Pull → Legs rotates in order whenever he trains (`state.nextSplit`). Sessions are built from **slots with exercise options** (he likes varying exercises); history is tracked per exercise name.
+Trains ~5 days/week, 1h–1h15, no fixed weekdays. Push → Pull → Legs rotates in order whenever he trains (`state.nextSplit`). Sessions are **free-form**: the session starts empty and Noé adds exercises as he goes from a catalog (categories: Chest, Shoulders, Triceps, Back, Biceps, Legs, Core, Skills & holds; he can add his own). The catalog is built from the old slot options in `PROGRAM` plus a few extras. History is tracked per exercise name, so never rename existing exercises. The warm-up is only a collapsed list of ideas, nothing to tick.
 
 ### Pull-up program (K Boges, derived from the USMC Armstrong program)
 Every other day, always first in whatever session it lands on. Cycle: max → density → pyramid → max (`state.pu.next`).
@@ -48,5 +48,5 @@ Priority focus on hip and pelvis mobility, posture (upper back, neck) and shin c
 ### Running
 Irregular, 8–15 km when he runs. Big runs after long gaps are a common shin-splint trigger, so the app suggests ~5–6 km after more than a week off. Keep that logic.
 
-### Time cuts
-If a session runs long, skip in order: rear delts → adductors → one core exercise. Arms and compounds stay (he wants bigger arms).
+### Metrics
+More tab: body weight and height, skill records (a new record resets the hold target to 70%), one-arm hang, lift PRs. These replace the old home-screen baseline card.

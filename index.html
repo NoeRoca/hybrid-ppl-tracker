@@ -114,6 +114,8 @@ nav.tabs button.on{color:var(--ink);border-top-color:var(--ink)}
 .streak{font-family:var(--display);font-weight:700;font-size:34px;line-height:1;text-align:right}
 .dow,.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center}
 .dow{font-family:var(--display);font-weight:600;font-size:12px;letter-spacing:.08em;color:var(--muted)}
+.cal button.d{background:transparent;font:inherit;font-weight:600;padding:0;cursor:pointer}
+.cal .d.sel{box-shadow:0 0 0 3px color-mix(in srgb,var(--pull) 55%,transparent)}
 .cal .d{aspect-ratio:1;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:600;border:2px solid var(--line);color:var(--muted)}
 .cal .d.full{background:var(--home);border-color:var(--home);color:var(--on-accent)}
 .cal .d.half{border-color:var(--home);color:var(--ink);background:conic-gradient(var(--home) 0 50%,transparent 0)}
@@ -221,6 +223,7 @@ const DEFAULT_STATE = {
   pu:{next:"max",densityTarget:6,ladderPeak:5},
   skills:{planche:{level:0,baseline:null,target:null},frontlever:{level:0,baseline:null,target:null},handstand:{level:0,baseline:null,target:null}},
   hang:{L:null,R:null},
+  metrics:{height:null},
   custom:{},
 };
 // Your weeks 1–3 from your notes. Exact dates unknown, so they are spaced every other day.
@@ -322,8 +325,8 @@ function holdCount(k){return S.priority===k?6:3}
 function puLogTotal(l){ if(l.day==="pyramid")return (l.ladders||[]).reduce((a,x)=>a+(x.reps||0),0); return (l.sets||[]).reduce((a,x)=>a+(+x||0),0) }
 
 /* ================= VIEWS ================= */
-let session=lsGet("hybrid-ppl-draft")||null, tab=session?"session":"today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
-let psub="pullups", calOff=0, sheet=false;
+let session=migrateDraft(lsGet("hybrid-ppl-draft")), tab=session?"session":"today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
+let psub="pullups", calOff=0, sheet=false, selDay=null, pick=null;
 const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
 const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine"};
 function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${(tab==="routine"?"today":tab)===k?"on":""}">${n}</button>`).join("")}
@@ -348,6 +351,17 @@ function streakDays(){
   while(t[dstr(d)]||r[dstr(d)]){n++;d.setDate(d.getDate()-1)}
   return n;
 }
+function dayDetail(ds){
+  const L=LOGS.filter(l=>l.date===ds),parts=[];
+  L.filter(l=>l.type==="session").forEach(l=>parts.push(`${SPLITS[l.split].name} day${l.min?` (${l.min} min)`:""}`));
+  L.filter(l=>l.type==="pullup").forEach(l=>parts.push(`Pull-ups: ${PU_DAYS[l.day].name}${l.approx?" (approx.)":""}`));
+  L.filter(l=>l.type==="run").forEach(l=>parts.push(`Run ${l.km} km`));
+  const train=parts.length;
+  if(!train)parts.push(ds>today()?"Nothing yet":"Rest day");
+  const h=L.find(l=>l.type==="home"),n=h?(h.done||[]).length:0;
+  if(ds<=today())parts.push(n?`Home routine ${n}/${PROGRAM.home.length}`:"No home routine");
+  return `<div class="hint"><b>${fmtDate(ds)}</b><br>${parts.map(esc).join("<br>")}</div>`;
+}
 function calCard(){
   const now=new Date(),m=new Date(now.getFullYear(),now.getMonth()+calOff,1);
   const lead=(m.getDay()+6)%7,dim=new Date(m.getFullYear(),m.getMonth()+1,0).getDate(),{t,r}=dayMap(),td=today();
@@ -358,12 +372,14 @@ function calCard(){
     let c="d";
     if(ds>td)c+=" future";else if(tr&&ro){c+=" full";full++}else if(tr||ro)c+=" half";
     if(ds===td)c+=" today";
-    cells+=`<div class="${c}" aria-label="${ds}${tr?", trained":""}${ro?", routine done":""}">${c.includes("half")?`<span>${d}</span>`:d}</div>`;
+    if(ds===selDay)c+=" sel";
+    cells+=`<button class="${c}" data-a="day" data-k="${ds}" aria-label="${ds}${tr?", trained":""}${ro?", routine done":""}">${c.includes("half")?`<span>${d}</span>`:d}</button>`;
   }
   return `<section class="card">
     <div class="row between"><div class="row"><button class="btn sm ghost" data-a="cal" data-d="-1" aria-label="Previous month">‹</button><h2>${m.toLocaleDateString("en-GB",{month:"long",year:"numeric"})}</h2><button class="btn sm ghost" data-a="cal" data-d="1" aria-label="Next month" ${calOff>=0?"disabled":""}>›</button></div><span class="muted small">${full} full day${full===1?"":"s"}</span></div>
     <div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
     <div class="cal">${cells}</div>
+    ${selDay?dayDetail(selDay):""}
     <div class="legend small muted"><span><i style="background:var(--home)"></i>Session + routine</span><span><i style="background:conic-gradient(var(--home) 0 50%,transparent 0)"></i>One of them</span><span><i></i>Nothing</span></div>
   </section>`;
 }
@@ -377,10 +393,7 @@ function sheetView(){
   </div></div>`;
 }
 function viewToday(){
-  const nx=S.nextSplit, sp=SPLITS[nx], pu=puSummary(), h=homeLog(), n=h?.done?.length||0, tot=PROGRAM.home.length;
-  const needTests=["planche","frontlever","handstand"].filter(k=>!S.skills[k].baseline);
-  const puNext=PU_DAYS[S.pu.next];
-  const puTarget=S.pu.next==="density"?`10 × ${S.pu.densityTarget}`:S.pu.next==="pyramid"?`5 ladders, peak ${S.pu.ladderPeak}`:"3 max sets";
+  const h=homeLog(), n=h?.done?.length||0, tot=PROGRAM.home.length;
   const st=streakDays();
   return `<div class="stack">
   <div class="row between"><span class="eyebrow">Keep the chain going</span><div><div class="streak">${st}</div><div class="eyebrow">day streak</div></div></div>
@@ -394,14 +407,18 @@ function viewToday(){
     <div class="bar"><i style="width:${Math.round(n/tot*100)}%"></i></div>
     <div class="muted small">Tick items one by one. About 15 min · hips first</div>
   </section>
-  <section class="card edge" style="--c:${cvar(nx)}">
-    <span class="eyebrow">Up next</span>
-    <div class="row" style="gap:14px">${plate(nx)}<div><h3>${sp.name} day${nx==="push"?" · planche first":nx==="legs"?" · front lever first":nx==="pull"?" · handstand first":""}</h3>
-    <div class="muted small">${pu.due?`Pull-ups first: ${puNext.name}, ${puTarget}`:`Pull-ups in ${2-pu.d} day${2-pu.d>1?"s":""} (${puNext.name})`}</div></div></div>
-  </section>
-  ${needTests.length?`<section class="card"><span class="eyebrow">Baseline tests</span><p style="margin:0">Not tested yet: ${needTests.map(k=>SKILLS[k].name).join(", ")}${S.hang.L==null?", one-arm hang":""}. Hold targets are set at about 70% of your test.</p><div><button class="btn sm" data-a="psub-go" data-k="skills">Go to tests</button></div></section>`:""}
+  ${lastCard()}
   ${sheet?sheetView():""}
   </div>`;
+}
+function lastCard(){
+  const l=LOGS.find(x=>x.type==="session"||x.type==="run");
+  if(!l)return `<section class="card"><span class="eyebrow">Last session</span><div class="muted">Nothing logged yet.</div></section>`;
+  const d=daysSince(l.date),ago=d===0?"today":d===1?"yesterday":`${d} days ago`;
+  if(l.type==="run")return `<section class="card edge" style="--c:var(--warn)"><span class="eyebrow">Last session</span><h3>Run · ${l.km} km</h3><div class="muted small">${ago}${l.min?` · ${l.min} min`:""}</div></section>`;
+  return `<section class="card edge" style="--c:${cvar(l.split)}"><span class="eyebrow">Last session</span>
+    <div class="row" style="gap:14px">${plate(l.split)}<div style="min-width:0"><h3>${SPLITS[l.split].name} day</h3><div class="muted small">${ago}${l.min?` · ${l.min} min`:""}</div></div></div>
+    <div class="muted small">${esc((l.items||[]).map(i=>i.ex).join(" · "))}</div></section>`;
 }
 function viewRoutine(){
   return `<div class="stack"><div><button class="btn sm ghost" data-a="tab" data-k="today">‹ Back to Home</button></div>${viewHome()}</div>`;
@@ -419,59 +436,101 @@ function runAdvice(){
 }
 
 /* ---------- Session ---------- */
-function newSession(k){
-  const slots={};
-  PROGRAM[k].forEach(sl=>{
-    if(sl.kind==="skill"){const sk=S.skills[sl.skill];const t=holdTarget(sl.skill);
-      slots[sl.id]={ex:SKILLS[sl.skill].name+" · "+SKILLS[sl.skill].levels[sk.level],test:!sk.baseline,testVal:"",sets:sk.baseline?Array.from({length:holdCount(sl.skill)},()=>({s:t,done:false})):[]};return}
-    const ex=S.custom[`${k}.${sl.id}.last`]||(sl.opts[0].n||sl.opts[0]);
-    const n=sl.side?sl.sets*2:sl.sets;
-    slots[sl.id]={ex,sets:Array.from({length:n},()=>({w:"",r:"",s:"",done:false}))};
-  });
-  return {split:k,started:Date.now(),date:today(),warm:[],slots};
+const CATS=["Chest","Shoulders","Triceps","Back","Biceps","Legs","Core","Skills & holds"];
+const CAT_FIRST={push:["Chest","Shoulders","Triceps","Core","Skills & holds"],pull:["Back","Biceps","Core","Skills & holds"],legs:["Legs","Core","Skills & holds"]};
+const CAT_OF={c1:"Chest",c2:"Shoulders",lat:"Shoulders",t1:"Triceps",t2:"Triceps",r1:"Back",r2:"Back",fp:"Back",rd:"Back",b1:"Biceps",b2:"Biceps",sq:"Legs",rdl:"Legs",split:"Legs",curl:"Legs",quad:"Legs",add:"Legs",calf:"Legs",tib:"Legs",core:"Core",leans:"Skills & holds",grip:"Skills & holds",oah:"Skills & holds"};
+const EXTRAS=[
+  ["Dumbbell bench press","Chest","lift"],["Incline dumbbell press","Chest","lift"],["Pec fly (machine)","Chest","lift"],["Cable fly","Chest","lift"],["Push-up","Chest","reps"],
+  ["Close-grip bench press","Triceps","lift"],["Hip thrust","Legs","lift"],["Walking lunge","Legs","lift"],
+];
+function catOrder(k){const f=CAT_FIRST[k]||[];return f.concat(CATS.filter(c=>!f.includes(c)))}
+function catalog(){
+  const m=new Map();
+  for(const sp of ORDER)for(const sl of PROGRAM[sp]){
+    if(sl.kind==="skill")continue;
+    for(const o of optsFor(sp,sl))if(!m.has(o.n))m.set(o.n,{n:o.n,k:o.k,cat:CAT_OF[sl.id]||"Chest",key:sl.id,lo:sl.lo,hi:sl.hi,rest:sl.rest,side:sl.side,sets:sl.sets,range:sl.range});
+  }
+  for(const [n,cat,k] of EXTRAS)if(!m.has(n))m.set(n,{n,k,cat,key:"x",sets:3,range:k==="lift"?"8–12":"",rest:90,lo:k==="lift"?8:undefined,hi:k==="lift"?12:undefined});
+  for(const c of (S.custom.mine||[]))if(!m.has(c.n))m.set(c.n,{n:c.n,k:c.k,cat:c.cat,key:"mine",sets:3,range:"",rest:90});
+  for(const key of Object.keys(SKILLS))m.set(SKILLS[key].name+" (skill)",{n:SKILLS[key].name+" (skill)",cat:"Skills & holds",skill:key});
+  return [...m.values()];
 }
 function optsFor(k,sl){const base=sl.opts.map(o=>typeof o==="string"?{n:o,k:sl.kind}:o);const cust=(S.custom[`${k}.${sl.id}`]||[]).map(n=>({n,k:sl.kind==="reps"?"reps":sl.kind}));return base.concat(cust)}
-function kindOf(k,sl,ex){const o=optsFor(k,sl).find(o=>o.n===ex);return o?o.k:sl.kind}
+function makeSlot(e){
+  if(e.skill){const sk=S.skills[e.skill],t=holdTarget(e.skill);
+    return {ex:SKILLS[e.skill].name+" · "+SKILLS[e.skill].levels[sk.level],def:{key:"skill-"+e.skill,skill:e.skill,label:"Skill",kind:"skill"},test:!sk.baseline,testVal:"",sets:sk.baseline?Array.from({length:holdCount(e.skill)},()=>({s:t,done:false})):[]};}
+  const n=e.side?e.sets*2:e.sets;
+  return {ex:e.n,def:{key:e.key,label:e.cat,kind:e.k,sets:e.sets,range:e.range,lo:e.lo,hi:e.hi,rest:e.rest,side:e.side},sets:Array.from({length:n},()=>({w:"",r:"",s:"",done:false}))};
+}
+function newSession(k){return {split:k,started:Date.now(),date:today(),warm:[],order:[],slots:{}}}
+function migrateDraft(d){
+  if(!d||d.order)return d;
+  const out={split:d.split,started:d.started,date:d.date,warm:[],order:[],slots:{}};
+  for(const sl of (PROGRAM[d.split]||[])){
+    const st=d.slots&&d.slots[sl.id];
+    if(!st||!(st.sets||[]).some(x=>x.done||x.r||x.s||x.w))continue;
+    const id=uid()+out.order.length;
+    if(sl.kind==="skill"){st.def={key:"skill-"+sl.skill,skill:sl.skill,label:"Skill",kind:"skill"}}
+    else{const o=sl.opts.map(o=>typeof o==="string"?{n:o,k:sl.kind}:o).find(o=>o.n===st.ex);st.def={key:sl.id,label:sl.label,kind:o?o.k:sl.kind,sets:sl.sets,range:sl.range,lo:sl.lo,hi:sl.hi,rest:sl.rest,side:sl.side}}
+    out.order.push(id);out.slots[id]=st;
+  }
+  return out;
+}
 function saveDraft(){lsSet("hybrid-ppl-draft",session)}
 
+const WARM={
+  all:["Band pull-aparts 2 × 15","Scapular pull-ups 1 × 10","Wrist circles and floor rocks 1 min","1–2 light ramp-up sets of your first lift"],
+  push:["Shoulder circles / arm circles","Push-up plus (shoulder blades wrap around the ribs)","Wrist prep for planche leans"],
+  pull:["Dead hang 20–30 s","Band face pulls 1 × 15","Cat-cow and thoracic rotations"],
+  legs:["Bodyweight squat with a 3 s pause 1 × 10","Glute bridges 1 × 12","Ankle rocks against the wall, 10 per side","Hip 90/90 switches 1 × 8"],
+};
 function viewSession(){
-  const k=session.split, prog=PROGRAM[k];
-  const warm=PROGRAM.warmup.map((w,i)=>{const on=session.warm.includes(i);return `<div class="row between"><span class="${on?"muted":""}">${esc(w[0])} <span class="muted small">${esc(w[1])}</span></span><button class="chk ${on?"on":""}" data-a="warm" data-i="${i}" aria-label="Done">${on?"✓":""}</button></div>`}).join("");
-  const pu=puSummary();
+  const k=session.split, pu=puSummary();
+  const warm=[...WARM[k],...WARM.all];
   return `<div class="stack">
   <div class="row between"><div class="row">${plate(k)}<span class="muted small">Started ${new Date(session.started).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</span></div>
   <button class="btn sm ghost" data-a="cancel-session">${confirmKey==="cancel"?"Tap again to discard":"Discard"}</button></div>
   ${pu.due?`<div class="card edge" style="--c:var(--pull)"><div class="row between"><div><span class="eyebrow">First</span><h3>Pull-ups: ${PU_DAYS[S.pu.next].name}</h3></div><button class="btn sm" data-a="pu-open">Log it</button></div>${k==="pull"?'<div class="muted small">No pulldowns or extra pull-ups today; the program covers vertical pulling.</div>':""}</div>`:""}
-  <details class="card" ${session.warm.length<PROGRAM.warmup.length?"open":""}><summary>Warm-up · ${session.warm.length}/${PROGRAM.warmup.length}</summary><div class="stack" style="gap:6px;margin-top:8px">${warm}</div></details>
-  ${prog.map(sl=>slotCard(k,sl)).join("")}
-  <div class="hint">Short on time? Skip the slots marked "skip 1st", then "skip 2nd", then "skip 3rd". Arms and compounds stay.</div>
+  <details class="card"><summary>Warm-up ideas</summary><ul class="muted small" style="margin:8px 0 0;padding-left:18px">${warm.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></details>
+  ${session.order.map(id=>slotCard(k,id)).join("")||'<div class="hint">Nothing here yet. Add your first exercise when you start it.</div>'}
+  <button class="btn" style="min-height:48px" data-a="pick-open">+ Add exercise</button>
   <button class="btn primary" style="--c:var(--ink)" data-a="finish">Finish and save</button>
+  ${pick?pickerView():""}
   </div>`;
 }
-function slotCard(k,sl){
-  const st=session.slots[sl.id];
+function pickerView(){
+  const cats=catOrder(session.split),all=catalog(),list=all.filter(e=>e.cat===pick.cat);
+  return `<div class="sheet" data-a="pick-close"><div data-a="noop" style="max-height:85vh;overflow:auto">
+    <div class="row between"><h2>Add exercise</h2><button class="btn sm ghost" data-a="pick-close">Close</button></div>
+    <div class="seg" style="flex-wrap:nowrap;overflow-x:auto">${cats.map(c=>`<button class="${c===pick.cat?"on":""}" data-a="pick-cat" data-k="${esc(c)}" style="flex:none;padding:8px 12px;white-space:nowrap">${esc(c)}</button>`).join("")}</div>
+    ${list.map(e=>{const lp=e.skill?null:lastPerf(e.n);return `<button class="btn opt" style="--c:var(--line)" data-a="pick-add" data-n="${esc(e.n)}"><b>${esc(e.n)}</b><span class="muted small">${lp?fmtDate(lp.date):""}</span></button>`}).join("")||'<div class="muted">Nothing in this category yet.</div>'}
+    <details><summary>Not in the list? Add your own</summary><div class="stack" style="margin-top:8px">
+      <input type="text" id="cust-name" placeholder="Exercise name">
+      <select id="cust-cat">${CATS.filter(c=>c!=="Skills & holds").map(c=>`<option ${c===pick.cat?"selected":""}>${c}</option>`).join("")}<option>Skills & holds</option></select>
+      <select id="cust-kind"><option value="lift">Weight × reps</option><option value="reps">Reps only</option><option value="hold">Hold (seconds)</option></select>
+      <button class="btn sm" data-a="custom-add">Add and use it</button></div></details>
+  </div></div>`;
+}
+function slotCard(k,id){
+  const st=session.slots[id], sl={id,...st.def};
   if(sl.kind==="skill")return skillSlot(k,sl,st);
-  const kind=kindOf(k,sl,st.ex);
-  const opts=optsFor(k,sl);
+  const kind=sl.kind;
   const last=lastPerf(st.ex);
   let hint="";
   if(last&&last.it.kind==="lift"&&sl.hi){const reps=last.it.sets.map(s=>+s.r||0);if(reps.length&&reps.every(r=>r>=sl.hi))hint=`<div class="hint good">You hit ${sl.hi} on every set last time. Add weight.</div>`}
-  const cut=sl.cut?`<span class="pill">skip ${["","1st","2nd","3rd"][sl.cut]}</span>`:"";
   const rows=st.sets.map((s,i)=>{
     const lab=sl.side?(i%2?"R":"L")+(Math.floor(i/2)+1):i+1;
-    const chk=`<button class="chk ${s.done?"on":""}" data-a="set-done" data-slot="${sl.id}" data-i="${i}" aria-label="Set done">${s.done?"✓":""}</button>`;
-    if(kind==="lift")return `<div class="set"><span class="lab">${lab}</span><input type="number" inputmode="decimal" placeholder="kg" id="${sl.id}-w-${i}" data-f="w" data-slot="${sl.id}" data-i="${i}" value="${esc(s.w)}"><input type="number" inputmode="numeric" placeholder="reps" id="${sl.id}-r-${i}" data-f="r" data-slot="${sl.id}" data-i="${i}" value="${esc(s.r)}">${chk}</div>`;
+    const chk=`<button class="chk ${s.done?"on":""}" data-a="set-done" data-slot="${id}" data-i="${i}" aria-label="Set done">${s.done?"✓":""}</button>`;
+    if(kind==="lift")return `<div class="set"><span class="lab">${lab}</span><input type="number" inputmode="decimal" placeholder="kg" id="${id}-w-${i}" data-f="w" data-slot="${id}" data-i="${i}" value="${esc(s.w)}"><input type="number" inputmode="numeric" placeholder="reps" id="${id}-r-${i}" data-f="r" data-slot="${id}" data-i="${i}" value="${esc(s.r)}">${chk}</div>`;
     const f=kind==="hold"?"s":"r";
-    return `<div class="set one"><span class="lab">${lab}</span><input type="number" inputmode="numeric" placeholder="${kind==="hold"?"seconds":"reps"}" id="${sl.id}-${f}-${i}" data-f="${f}" data-slot="${sl.id}" data-i="${i}" value="${esc(s[f])}">${chk}</div>`;
+    return `<div class="set one"><span class="lab">${lab}</span><input type="number" inputmode="numeric" placeholder="${kind==="hold"?"seconds":"reps"}" id="${id}-${f}-${i}" data-f="${f}" data-slot="${id}" data-i="${i}" value="${esc(s[f])}">${chk}</div>`;
   }).join("");
   return `<section class="card">
-    <div class="row between"><span class="eyebrow">${esc(sl.label)}</span><div class="row">${cut}<span class="dose">${sl.sets}${sl.side?"/side":""} × ${esc(sl.range)}</span></div></div>
-    <div class="row" style="flex-wrap:nowrap"><select id="ex-${sl.id}" data-a="ex" data-slot="${sl.id}" aria-label="Exercise">${opts.map(o=>`<option ${o.n===st.ex?"selected":""}>${esc(o.n)}</option>`).join("")}<option value="__add">+ Add another exercise…</option></select></div>
-    ${st.adding?`<div class="row" style="flex-wrap:nowrap"><input type="text" id="add-${sl.id}" placeholder="Exercise name"><button class="btn sm" data-a="ex-add" data-slot="${sl.id}">Add</button></div>`:""}
+    <div class="row between"><div><span class="eyebrow">${esc(sl.label)}</span><h3>${esc(st.ex)}</h3></div><div class="row">${sl.range?`<span class="dose">${sl.sets}${sl.side?"/side":""} × ${esc(sl.range)}</span>`:""}<button class="btn sm ghost" data-a="item-rm" data-slot="${id}" aria-label="Remove exercise">${confirmKey==="rm-"+id?"Remove?":"✕"}</button></div></div>
     <div class="row between"><span class="muted small">${last?`Last (${fmtDate(last.date)}): ${esc(fmtSets(last.it))}`:"No history for this exercise yet"}</span><a class="link" href="${demo(st.ex)}" target="_blank" rel="noopener">Watch demo ↗</a></div>
     ${hint}
     <div class="sets">${rows}</div>
-    <div class="row"><button class="btn sm" data-a="rest" data-s="${sl.rest||90}">Rest ${Math.floor((sl.rest||90)/60)}:${pad((sl.rest||90)%60)}</button><button class="btn sm ghost" data-a="add-set" data-slot="${sl.id}">+ Set</button></div>
+    <div class="row"><button class="btn sm" data-a="rest" data-s="${sl.rest||90}">Rest ${Math.floor((sl.rest||90)/60)}:${pad((sl.rest||90)%60)}</button><button class="btn sm ghost" data-a="add-set" data-slot="${id}">+ Set</button></div>
   </section>`;
 }
 function skillSlot(k,sl,st){
@@ -582,11 +641,8 @@ function viewSkills(){
     <div class="row between"><span class="muted">Best test</span><b>${sk.baseline?sk.baseline+" s":"Not tested"}</b></div>
     <div class="row between"><span class="muted">Hold target</span><b>${t?`${holdCount(k)} × ${t} s`:"–"}</b></div>
     ${t>=10&&sk.level<lv.length-1?`<div class="hint good">Ready to try ${lv[sk.level+1]}. Move up, then test it.</div>`:""}
-    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="New test, seconds" id="sk-test-${k}"><button class="btn sm" data-a="sk-test" data-k="${k}">Save test</button></div>
     <div class="row"><button class="btn sm ghost" data-a="sk-level" data-k="${k}" data-d="-1" ${sk.level?"":"disabled"}>Level down</button><button class="btn sm ghost" data-a="sk-level" data-k="${k}" data-d="1" ${sk.level<lv.length-1?"":"disabled"}>Level up</button><a class="link" href="${demo(SKILLS[k].name+" "+lv[sk.level]+" progression")}" target="_blank" rel="noopener">Watch demo ↗</a></div></section>`}).join("")}
-  <section class="card"><h3>One-arm hang</h3><div class="muted small">Logged hangs update these automatically when you beat them.</div>
-  <div class="row between"><span class="muted">Left / Right</span><b>${S.hang.L??"–"} s / ${S.hang.R??"–"} s</b></div>
-  <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Left, s" id="hang-L"><input type="number" inputmode="numeric" placeholder="Right, s" id="hang-R"><button class="btn sm" data-a="hang-test">Save</button></div></section>
+  <section class="card"><div class="muted small">Test results and records are updated in More, then Metrics.</div><div><button class="btn sm" data-a="tab" data-k="more">Open Metrics</button></div></section>
   </div>`;
 }
 
@@ -598,6 +654,7 @@ function histCard(list,title){
     else if(l.type==="pullup"){c="--pull";title="Pull-ups · "+PU_DAYS[l.day].name;detail=l.day==="pyramid"?l.ladders.map(x=>`${x.peak}${x.clean?"":"✗"}`).join(" / ")+` = ${puLogTotal(l)} reps`:`${l.sets.join(" · ")} = ${puLogTotal(l)} reps`;if(l.note)detail+=" · "+l.note}
     else if(l.type==="home"){c="--home";title="Home routine";detail=`${(l.done||[]).length}/${PROGRAM.home.length} done`}
     else if(l.type==="run"){c="--warn";title=`Run · ${l.km} km`;detail=[l.min?`${l.min} min`:"",l.shin?"shins hurt":"",l.note||""].filter(Boolean).join(" · ")}
+    else if(l.type==="weight"){c="--muted";title=`Weight · ${l.kg} kg`}
     else if(l.type==="test"){c="--muted";title=`Test · ${l.skill}`;detail=`${l.level}: ${l.seconds} s`}
     return `<div class="logitem"><span class="dot" style="--c:var(${c})"></span><div style="min-width:0;flex:1"><div class="row between"><b>${esc(title)}</b><span class="muted small">${fmtDate(l.date)}${l.approx?" (approx.)":""}</span></div><div class="muted small" style="overflow-wrap:anywhere">${esc(detail)}</div></div>${l.seed||l.id.startsWith("seed")?"":`<button class="btn sm ghost" data-a="del" data-id="${l.id}" aria-label="Delete entry">${confirmKey==="del-"+l.id?"Confirm":"✕"}</button>`}</div>`}).join("<hr>");
   return `<section class="card"><span class="eyebrow">${title}</span>${items||'<p class="muted">Nothing logged yet.</p>'}</section>`;
@@ -611,8 +668,30 @@ function runCard(){
 }
 function viewRuns(){return `<div class="stack">${runCard()}${histCard(LOGS.filter(l=>l.type==="run"),"Run history")}</div>`}
 function viewLog(){return `<div class="stack">${histCard(LOGS,"History")}</div>`}
+function prList(){
+  const best={};
+  for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift")for(const x of it.sets||[])if(x.w&&x.r&&(!best[it.ex]||x.w>best[it.ex].w||(x.w===best[it.ex].w&&x.r>best[it.ex].r)))best[it.ex]={w:x.w,r:x.r};
+  return Object.keys(best).sort().map(n=>[n,best[n]]);
+}
+function viewMetrics(){
+  const w=lastOf("weight"),ws=LOGS.filter(l=>l.type==="weight").slice(0,5),prs=prList();
+  return `<section class="card"><span class="eyebrow">Body</span>
+    <div class="row between"><span class="muted">Weight</span><b>${w?`${w.kg} kg · ${fmtDate(w.date)}`:"–"}</b></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="decimal" placeholder="kg" id="m-weight"><button class="btn sm" data-a="weight-save">Save weight</button></div>
+    ${ws.length>1?`<div class="muted small">Recent: ${ws.map(x=>x.kg).join(" · ")} kg</div>`:""}
+    <div class="row between"><span class="muted">Height</span><b>${S.metrics.height?S.metrics.height+" cm":"–"}</b></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="cm" id="m-height"><button class="btn sm" data-a="height-save">Save height</button></div></section>
+  <section class="card"><span class="eyebrow">Skill records</span>
+    <div class="muted small">Max hold at your current level. Saving a new record resets your hold target to about 70% of it, and your sessions use that target.</div>
+    ${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],t=holdTarget(k);return `<div class="stack" style="gap:6px"><div class="row between"><b>${SKILLS[k].name} · ${SKILLS[k].levels[sk.level]}</b><span class="muted small">${sk.baseline?`best ${sk.baseline} s · target ${t} s`:"Not tested yet"}</span></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="New max hold, seconds" id="sk-test-${k}"><button class="btn sm" data-a="sk-test" data-k="${k}">Save</button></div></div>`}).join("<hr>")}
+  </section>
+  <section class="card"><span class="eyebrow">One-arm hang</span><div class="row between"><span class="muted">Left / Right</span><b>${S.hang.L??"–"} s / ${S.hang.R??"–"} s</b></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Left, s" id="hang-L"><input type="number" inputmode="numeric" placeholder="Right, s" id="hang-R"><button class="btn sm" data-a="hang-test">Save</button></div></section>
+  <section class="card"><details><summary>Lift records (${prs.length})</summary><div class="stack" style="gap:6px;margin-top:8px">${prs.length?prs.map(([n,b])=>`<div class="row between"><span>${esc(n)}</span><b>${b.w} kg × ${b.r}</b></div>`).join(""):'<span class="muted small">Heaviest set per exercise shows up here after your first sessions.</span>'}</div></details></section>`;
+}
 function viewMore(){
-  return `<div class="stack"><section class="card"><span class="eyebrow">Backup</span><div class="muted small">Everything is stored on this phone, works without signal, and is not synced anywhere else. Export a backup now and then (Files, iCloud, email to yourself).</div>
+  return `<div class="stack">${viewMetrics()}<section class="card"><span class="eyebrow">Backup</span><div class="muted small">Everything is stored on this phone, works without signal, and is not synced anywhere else. Export a backup now and then (Files, iCloud, email to yourself).</div>
   <div class="row"><button class="btn sm" data-a="download">Download backup</button><button class="btn sm" data-a="export">${showExport?"Hide JSON":"Show JSON"}</button><button class="btn sm" data-a="import-toggle">${showImport?"Close import":"Import backup"}</button></div>
   ${showExport?`<textarea id="export-box" readonly>${esc(JSON.stringify({state:S,logs:LOGS},null,1))}</textarea><div><button class="btn sm" data-a="copy-export">Copy</button></div>`:""}
   ${showImport?`<div class="muted small">Pick a backup file or paste its JSON. This replaces everything on this phone.</div><input type="file" id="import-file" accept=".json,application/json"><textarea id="import-box" data-f="import" placeholder="Or paste JSON here">${esc(importText)}</textarea><div><button class="btn sm primary" style="--c:var(--warn)" data-a="import-go">${confirmKey==="import"?"Tap again to replace all data":"Replace data with this backup"}</button></div>`:""}</section></div>`;
@@ -632,16 +711,25 @@ document.addEventListener("input",e=>{
 document.addEventListener("change",e=>{
   const t=e.target;
   if(t.id==="import-file"&&t.files&&t.files[0]){const r=new FileReader();r.onload=()=>{importText=String(r.result||"");render()};r.readAsText(t.files[0]);return}
-  if(t.dataset.a==="ex"&&session){const st=session.slots[t.dataset.slot];
-    if(t.value==="__add"){st.adding=true;saveDraft();render();setTimeout(()=>$("#add-"+t.dataset.slot)?.focus(),0);return}
-    st.ex=t.value;st.adding=false;S.custom[`${session.split}.${t.dataset.slot}.last`]=t.value;saveState();saveDraft();render();}
 });
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-a]");if(!b||b.tagName==="SELECT")return;const a=b.dataset.a;
-  if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&!a.startsWith("del"))confirmKey=null;
+  if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&a!=="item-rm"&&!a.startsWith("del"))confirmKey=null;
   switch(a){
     case "tab":tab=b.dataset.k;render();window.scrollTo(0,0);break;
     case "noop":break;
+    case "pick-open":pick={cat:catOrder(session.split)[0]};render();break;
+    case "pick-close":pick=null;render();break;
+    case "pick-cat":pick.cat=b.dataset.k;render();break;
+    case "pick-add":{const e=catalog().find(x=>x.n===b.dataset.n);if(!e)break;const id=uid()+session.order.length;session.order.push(id);session.slots[id]=makeSlot(e);pick=null;saveDraft();render();break}
+    case "custom-add":{const n=($("#cust-name").value||"").trim();if(!n){toast("Type a name first");break}
+      const e={n,cat:$("#cust-cat").value,k:$("#cust-kind").value};
+      if(!catalog().some(x=>x.n.toLowerCase()===n.toLowerCase())){S.custom.mine=[...(S.custom.mine||[]),e];saveState()}
+      const f=catalog().find(x=>x.n.toLowerCase()===n.toLowerCase());const id=uid()+session.order.length;session.order.push(id);session.slots[id]=makeSlot(f);pick=null;saveDraft();render();break}
+    case "item-rm":{const id=b.dataset.slot;if(confirmKey==="rm-"+id){confirmKey=null;session.order=session.order.filter(x=>x!==id);delete session.slots[id];saveDraft();render()}else{confirmKey="rm-"+id;render()}break}
+    case "day":selDay=selDay===b.dataset.k?null:b.dataset.k;render();break;
+    case "weight-save":{const v=num($("#m-weight").value);if(!v){toast("Enter your weight in kg");break}await putLog({id:uid(),type:"weight",date:today(),ts:Date.now(),kg:v});render();toast("Weight saved");break}
+    case "height-save":{const v=num($("#m-height").value);if(!v){toast("Enter your height in cm");break}S.metrics.height=v;saveState();render();toast("Height saved");break}
     case "psub":psub=b.dataset.k;render();break;
     case "psub-go":tab="progress";psub=b.dataset.k;render();window.scrollTo(0,0);break;
     case "cal":calOff=Math.min(0,calOff+ +b.dataset.d);render();break;
@@ -655,13 +743,11 @@ document.addEventListener("click",async e=>{
     case "hold-timer":startTimer(+b.dataset.s,"Hold");break;
     case "start":if(session&&confirmKey!=="start"){confirmKey="start";toast("A session is in progress. Tap Start again to replace it.");break}confirmKey=null;sheet=false;session=newSession(b.dataset.k);tab="session";saveDraft();render();window.scrollTo(0,0);break;
     case "cancel-session":if(confirmKey==="cancel"){session=null;confirmKey=null;tab="today";try{localStorage.removeItem("hybrid-ppl-draft")}catch{};render()}else{confirmKey="cancel";render()}break;
-    case "warm":{const i=+b.dataset.i,w=session.warm;w.includes(i)?w.splice(w.indexOf(i),1):w.push(i);saveDraft();render();break}
     case "set-done":{const st=session.slots[b.dataset.slot].sets[+b.dataset.i];st.done=!st.done;saveDraft();render();
-      const sl=PROGRAM[session.split].find(x=>x.id===b.dataset.slot);if(st.done)startTimer(sl.kind==="skill"?120:(sl.rest||90),"Rest");break}
+      const df=session.slots[b.dataset.slot].def;if(st.done)startTimer(df.kind==="skill"?120:(df.rest||90),"Rest");break}
     case "add-set":{const st=session.slots[b.dataset.slot];st.sets.push({w:"",r:"",s:"",done:false});saveDraft();render();break}
-    case "ex-add":{const k=b.dataset.slot,v=$("#add-"+k).value.trim();if(!v)break;const key=`${session.split}.${k}`;S.custom[key]=[...(S.custom[key]||[]),v];S.custom[key+".last"]=v;session.slots[k].ex=v;session.slots[k].adding=false;saveState();saveDraft();render();break}
     case "skill-test":{const k=b.dataset.k,v=num($("#test-"+k).value);if(!v){toast("Enter your hold in seconds");break}
-      await saveTest(k,v);session.slots[b.dataset.slot]=newSession(session.split).slots[b.dataset.slot];saveDraft();render();toast(`Saved. Target: ${holdCount(k)} × ${holdTarget(k)} s`);break}
+      await saveTest(k,v);session.slots[b.dataset.slot]=makeSlot({skill:k});saveDraft();render();toast(`Saved. Target: ${holdCount(k)} × ${holdTarget(k)} s`);break}
     case "finish":await finishSession();break;
     case "pu-open":tab="progress";psub="pullups";render();window.scrollTo(0,0);toast("Session kept. Resume it from Home.");break;
     case "pu-den-done":{const s=puDraft.sets[+b.dataset.i];s.done=!s.done;render();if(s.done)startTimer(60,"Rest");break}
@@ -701,22 +787,22 @@ async function toggleHome(id){
 }
 async function finishSession(){
   const k=session.split,items=[];let msgs=[];
-  for(const sl of PROGRAM[k]){
-    const st=session.slots[sl.id];
-    if(sl.kind==="skill"){
-      if(!S.skills[sl.skill].baseline)continue;
+  for(const id of session.order){
+    const st=session.slots[id],df=st.def;
+    if(df.skill){
+      if(!S.skills[df.skill].baseline)continue;
       const holds=st.sets.filter(s=>s.done).map(s=>num(s.s)||0);if(!holds.length)continue;
-      const sk=S.skills[sl.skill],t=holdTarget(sl.skill);
-      items.push({slot:sl.id,ex:st.ex,kind:"hold",sets:holds.map(s=>({s}))});
-      if(holds.length>=st.sets.length&&holds.every(h=>h>=t)){sk.target=t+1;msgs.push(`${SKILLS[sl.skill].name} target → ${t+1} s`)}
+      const sk=S.skills[df.skill],t=holdTarget(df.skill);
+      items.push({slot:df.key,ex:st.ex,kind:"hold",sets:holds.map(s=>({s}))});
+      if(holds.length>=st.sets.length&&holds.every(h=>h>=t)){sk.target=t+1;msgs.push(`${SKILLS[df.skill].name} target → ${t+1} s`)}
       if(Math.max(...holds)>sk.baseline)sk.baseline=Math.max(...holds);
       continue;
     }
-    const kind=kindOf(k,sl,st.ex);
-    const sets=st.sets.filter(s=>s.done||s.r!==""||s.s!=="").map(s=>kind==="lift"?{w:num(s.w),r:num(s.r)}:kind==="hold"?{s:num(s.s)}:{r:num(s.r)});
+    const kind=df.kind;
+    const sets=st.sets.filter(s=>s.done||s.r!==""||s.s!==""||s.w!=="").map(s=>kind==="lift"?{w:num(s.w),r:num(s.r)}:kind==="hold"?{s:num(s.s)}:{r:num(s.r)});
     if(!sets.length)continue;
-    items.push({slot:sl.id,ex:st.ex,kind,sets});
-    if(sl.id==="oah"){st.sets.forEach((s,i)=>{const v=num(s.s);if(!v)return;const side=i%2?"R":"L";if(v>(S.hang[side]||0))S.hang[side]=v})}
+    items.push({slot:df.key,ex:st.ex,kind,sets});
+    if(df.key==="oah"){st.sets.forEach((s,i)=>{const v=num(s.s);if(!v)return;const side=i%2?"R":"L";if(v>(S.hang[side]||0))S.hang[side]=v})}
   }
   if(!items.length){toast("Log at least one set before finishing");return}
   await putLog({id:uid(),type:"session",split:k,date:session.date,ts:Date.now(),min:Math.round((Date.now()-session.started)/60000),items});
