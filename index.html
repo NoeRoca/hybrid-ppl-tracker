@@ -333,15 +333,19 @@ const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
 const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine",run:"Log a run"};
 function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${(tab==="routine"||tab==="run"?"today":tab)===k?"on":""}">${n}</button>`).join("")}
 
+const openD=new Set();
+document.addEventListener("toggle",e=>{const d=e.target;if(d.tagName!=="DETAILS")return;const k=(d.querySelector("summary")?.textContent||"").trim();d.open?openD.add(k):openD.delete(k)},true);
+function restoreDetails(){document.querySelectorAll("#main details").forEach(d=>{if(openD.has((d.querySelector("summary")?.textContent||"").trim()))d.open=true})}
 function render(){
   renderTabs();
   const now=new Date();
   $("#hdr-date").textContent=now.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
   const m=$("#main");
-  if(session&&tab==="session"){ $("#hdr-title").textContent=SPLITS[session.split].name+" session"; m.innerHTML=viewSession(); return; }
+  if(session&&tab==="session"){ $("#hdr-title").textContent=SPLITS[session.split].name+" session"; m.innerHTML=viewSession(); restoreDetails(); return; }
   if(tab==="session")tab="today";
   $("#hdr-title").textContent=tab==="more"&&moreSub?({measure:"Measurements",records:"Records",backup:"Backup",program:"Program"})[moreSub]:TITLES[tab];
   m.innerHTML=({today:viewToday,progress:viewProgress,more:viewMore,routine:viewRoutine,run:viewRunScreen})[tab]();
+  restoreDetails();
 }
 
 function plate(k){const s=SPLITS[k];return `<div class="plate ${k==="legs"?"legs":""}" style="--c:${cvar(k)}" aria-hidden="true"><span>${s.plate}</span></div>`}
@@ -594,9 +598,9 @@ function viewPullups(){
       <div class="small"><b>Pyramid day:</b> go 1, 2, 3 … up to your peak and back down, 5 times, never to failure. Five clean ladders and the peak goes up by 1.</div>
       <div class="muted small">Run it 6 weeks, then a lighter week, then retest your max. The app moves the numbers up for you.</div></div></details></section>
     <section class="card"><details><summary>Adjust the numbers</summary><div class="stack" style="margin-top:8px">
-      <div class="muted small">Only needed if the app got something wrong.</div>
+      <div class="muted small">Only needed if the app got something wrong. The pyramid peak is the number you aim for on your next pyramid day. You can still change the peak of any single ladder when you log it.</div>
       <div class="row between"><span>Density: <b>${S.pu.densityTarget}</b> reps per set</span><span class="row"><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="densityTarget" data-d="-1" aria-label="Density down">−</button><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="densityTarget" data-d="1" aria-label="Density up">+</button></span></div>
-      <div class="row between"><span>Pyramid peak: <b>${S.pu.ladderPeak}</b></span><span class="row"><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="ladderPeak" data-d="-1" aria-label="Peak down">−</button><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="ladderPeak" data-d="1" aria-label="Peak up">+</button></span></div>
+      <div class="row between"><span>Next pyramid peak: <b>${S.pu.ladderPeak}</b></span><span class="row"><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="ladderPeak" data-d="-1" aria-label="Peak down">−</button><button class="btn" style="min-width:44px" data-a="pu-adj" data-f="ladderPeak" data-d="1" aria-label="Peak up">+</button></span></div>
       <div class="muted small">Next pull-up day:</div>
       <div class="seg" role="group" aria-label="Next day">${Object.keys(PU_DAYS).map(k=>`<button class="${S.pu.next===k?"on":""}" data-a="pu-next" data-k="${k}">${PU_DAYS[k].name}</button>`).join("")}</div></div></details></section>
     <section class="card"><span class="eyebrow">Total reps per session</span>${puChart(hist)}</section>
@@ -712,13 +716,40 @@ function viewRecords(){
   <section class="card"><h3>Lift records</h3><div class="muted small">Best set per exercise, with an estimated one-rep max.</div>
     ${prs.length?prs.map(q=>`<div class="row between"><span>${esc(q.n)}<br><span class="muted small">${fmtDate(q.date)}</span></span><span style="text-align:right"><b>${q.w} kg × ${q.r}</b><br><span class="muted small">1RM ≈ ${q.e} kg</span></span></div>`).join("<hr>"):'<div class="muted small">Shows up here after your first sessions.</div>'}</section>`;
 }
+const WHY={
+  skill:"Planche is on Push and front lever on Legs to spread elbow and lat load away from the pull-up program.",
+  rdl:"Hinge pattern, part of the hip, pelvis and posture focus.",split:"Single-leg work, part of the hip and pelvis focus.",
+  calf:"Shin care: calves and tibialis every Legs day.",tib:"Shin care: calves and tibialis every Legs day.",
+  t1:"Arms are a priority, so they are never cut.",t2:"Arms are a priority, so they are never cut.",b1:"Arms are a priority, so they are never cut.",b2:"Arms are a priority, so they are never cut.",
+  oah:"One-arm hangs per side on Pull and Legs days.",grip:"Thick-bar hangs on Push day.",
+};
+const COREWHY={push:"Anti-extension core on Push.",pull:"Leg raises or crunches on Pull.",legs:"Anti-rotation core on Legs."};
+function estMin(k){
+  let sec=0;
+  for(const sl of PROGRAM[k]){
+    if(sl.kind==="skill"){const n=holdCount(sl.skill);sec+=n*10+(n-1)*120+60;continue}
+    const n=sl.side?sl.sets*2:sl.sets,work=sl.kind==="hold"?25:45;
+    sec+=n*work+(n-1)*(sl.rest||90)+60;
+  }
+  return Math.round(sec/60);
+}
+function puEst(){
+  const p=S.pu.ladderPeak;
+  return {max:Math.round((3*30+2*300)/60),density:Math.round((10*35+9*60)/60),pyramid:Math.round((5*(2*p-1)*38+4*60)/60)};
+}
 function viewProgramPage(){
   const k=progSplit,w=WARM[k];
   return `<section class="card"><div class="muted small">You rotate Push, Pull, Legs, about 5 days a week, with no fixed weekdays. Pull-ups come first every other day (see Progress). This is the recommended plan. In a session you add exercises yourself, so use it as a guide.</div></section>
   <div class="seg" role="group" aria-label="Day">${ORDER.map(x=>`<button class="${k===x?"on":""}" data-a="prog-split" data-k="${x}">${SPLITS[x].name}</button>`).join("")}</div>
+  <section class="card"><span class="eyebrow">Time estimate</span>
+    <div class="row between"><span>Exercises, as written</span><b>about ${estMin(k)} min</b></div>
+    <div class="row between"><span>Warm-up</span><b>about 8 min</b></div>
+    <div class="row between"><span>Pull-ups first (every other day)</span><b>${puEst().max}–${puEst().pyramid} min</b></div>
+    <div class="muted small">Rough sums of sets, rests and about 1 min between exercises. Pull-ups: max ${puEst().max}, density ${puEst().density}, pyramid ${puEst().pyramid} min. Your target is 1h–1h15, so on a pull-up day the full list runs long and the skip order below applies.</div>
+    ${(()=>{const c=PROGRAM[k].filter(x=>x.cut).sort((a,b)=>a.cut-b.cut);return c.length?`<div class="small"><b>Short on time? Skip in this order:</b> ${c.map(x=>esc(x.label.replace(/ · .*/,""))).join(", then ")}.</div>`:""})()}</section>
   <section class="card edge" style="--c:${cvar(k)}"><h3>${SPLITS[k].name} day</h3>
-  ${PROGRAM[k].map(sl=>sl.kind==="skill"?`<div><b>${SKILLS[sl.skill].name} (skill)</b><div class="muted small">First. 6 holds if it's your priority skill, otherwise 3.</div></div>`
-    :`<div><div class="row between"><b>${esc(sl.label)}</b><span class="dose">${sl.sets}${sl.side?"/side":""} × ${esc(sl.range)}</span></div><div class="muted small">${sl.opts.map(o=>esc(o.n||o)).join(" · ")}</div></div>`).join("<hr>")}
+  ${PROGRAM[k].map(sl=>sl.kind==="skill"?`<div><b>${SKILLS[sl.skill].name} (skill)</b><div class="muted small">First. 6 holds if it's your priority skill, otherwise 3.</div>${k!=="pull"?`<div class="small" style="margin-top:2px">${esc(WHY.skill)}</div>`:""}</div>`
+    :`<div><div class="row between"><b>${esc(sl.label)}</b><span class="dose">${sl.sets}${sl.side?"/side":""} × ${esc(sl.range)}</span></div><div class="muted small">${sl.opts.map(o=>esc(o.n||o)).join(" · ")}</div>${(sl.id==="core"?COREWHY[k]:WHY[sl.id])?`<div class="small" style="margin-top:2px">${esc(sl.id==="core"?COREWHY[k]:WHY[sl.id])}</div>`:""}</div>`).join("<hr>")}
   </section>
   <section class="card"><span class="eyebrow">Warm-up ideas</span><ul class="muted small" style="margin:0;padding-left:18px">${[...w,...WARM.all].map(x=>`<li>${esc(x)}</li>`).join("")}</ul></section>`;
 }
@@ -869,7 +900,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v7"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v8"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
