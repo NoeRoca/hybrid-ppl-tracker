@@ -326,7 +326,7 @@ function puLogTotal(l){ if(l.day==="pyramid")return (l.ladders||[]).reduce((a,x)
 
 /* ================= VIEWS ================= */
 let session=migrateDraft(lsGet("hybrid-ppl-draft")), tab=session?"session":"today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
-let psub="pullups", calOff=0, sheet=false, selDay=null, pick=null;
+let psub="pullups", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null;
 const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
 const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine"};
 function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="tab" data-k="${k}" class="${(tab==="routine"?"today":tab)===k?"on":""}">${n}</button>`).join("")}
@@ -338,7 +338,7 @@ function render(){
   const m=$("#main");
   if(session&&tab==="session"){ $("#hdr-title").textContent=SPLITS[session.split].name+" session"; m.innerHTML=viewSession(); return; }
   if(tab==="session")tab="today";
-  $("#hdr-title").textContent=TITLES[tab];
+  $("#hdr-title").textContent=tab==="more"&&moreSub?({measure:"Measurements",records:"Records",backup:"Backup"})[moreSub]:TITLES[tab];
   m.innerHTML=({today:viewToday,progress:viewProgress,more:viewMore,routine:viewRoutine})[tab]();
 }
 
@@ -400,7 +400,6 @@ function viewToday(){
   ${calCard()}
   ${session?`<section class="card edge" style="--c:${cvar(session.split)}"><div class="row between"><div><span class="eyebrow">In progress</span><h3>${SPLITS[session.split].name} session</h3></div><button class="btn primary ${session.split==="legs"?"legs":""}" style="--c:${cvar(session.split)}" data-a="resume">Resume</button></div></section>`:""}
   <button class="btn big" data-a="sheet-open" ${ready?"":"disabled"}>Start session</button>
-  <div class="row" style="flex-wrap:nowrap"><button class="btn" style="flex:1" data-a="psub-go" data-k="runs">Log a run</button></div>
   <section class="card edge" style="--c:var(--home)">
     <div class="row between"><span class="eyebrow">Home routine</span><span class="pill">${weekHomeDays()}/7 days this week</span></div>
     <div class="row between"><h3>${n}/${tot} done today</h3><button class="btn sm" data-a="tab" data-k="routine">Open</button></div>
@@ -642,7 +641,7 @@ function viewSkills(){
     <div class="row between"><span class="muted">Hold target</span><b>${t?`${holdCount(k)} × ${t} s`:"–"}</b></div>
     ${t>=10&&sk.level<lv.length-1?`<div class="hint good">Ready to try ${lv[sk.level+1]}. Move up, then test it.</div>`:""}
     <div class="row"><button class="btn sm ghost" data-a="sk-level" data-k="${k}" data-d="-1" ${sk.level?"":"disabled"}>Level down</button><button class="btn sm ghost" data-a="sk-level" data-k="${k}" data-d="1" ${sk.level<lv.length-1?"":"disabled"}>Level up</button><a class="link" href="${demo(SKILLS[k].name+" "+lv[sk.level]+" progression")}" target="_blank" rel="noopener">Watch demo ↗</a></div></section>`}).join("")}
-  <section class="card"><div class="muted small">Test results and records are updated in More, then Metrics.</div><div><button class="btn sm" data-a="tab" data-k="more">Open Metrics</button></div></section>
+  <section class="card"><div class="muted small">Test results are saved in More, then Records.</div><div><button class="btn sm" data-a="records-go">Open Records</button></div></section>
   </div>`;
 }
 
@@ -668,35 +667,57 @@ function runCard(){
 }
 function viewRuns(){return `<div class="stack">${runCard()}${histCard(LOGS.filter(l=>l.type==="run"),"Run history")}</div>`}
 function viewLog(){return `<div class="stack">${histCard(LOGS,"History")}</div>`}
-function prList(){
-  const best={};
-  for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift")for(const x of it.sets||[])if(x.w&&x.r&&(!best[it.ex]||x.w>best[it.ex].w||(x.w===best[it.ex].w&&x.r>best[it.ex].r)))best[it.ex]={w:x.w,r:x.r};
-  return Object.keys(best).sort().map(n=>[n,best[n]]);
-}
-function viewMetrics(){
-  const w=lastOf("weight"),ws=LOGS.filter(l=>l.type==="weight").slice(0,5),prs=prList();
-  return `<section class="card"><span class="eyebrow">Body</span>
-    <div class="row between"><span class="muted">Weight</span><b>${w?`${w.kg} kg · ${fmtDate(w.date)}`:"–"}</b></div>
-    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="decimal" placeholder="kg" id="m-weight"><button class="btn sm" data-a="weight-save">Save weight</button></div>
-    ${ws.length>1?`<div class="muted small">Recent: ${ws.map(x=>x.kg).join(" · ")} kg</div>`:""}
-    <div class="row between"><span class="muted">Height</span><b>${S.metrics.height?S.metrics.height+" cm":"–"}</b></div>
-    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="cm" id="m-height"><button class="btn sm" data-a="height-save">Save height</button></div></section>
-  <section class="card"><span class="eyebrow">Skill records</span>
-    <div class="muted small">Max hold at your current level. Saving a new record resets your hold target to about 70% of it, and your sessions use that target.</div>
-    ${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],t=holdTarget(k);return `<div class="stack" style="gap:6px"><div class="row between"><b>${SKILLS[k].name} · ${SKILLS[k].levels[sk.level]}</b><span class="muted small">${sk.baseline?`best ${sk.baseline} s · target ${t} s`:"Not tested yet"}</span></div>
-    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="New max hold, seconds" id="sk-test-${k}"><button class="btn sm" data-a="sk-test" data-k="${k}">Save</button></div></div>`}).join("<hr>")}
-  </section>
-  <section class="card"><span class="eyebrow">One-arm hang</span><div class="row between"><span class="muted">Left / Right</span><b>${S.hang.L??"–"} s / ${S.hang.R??"–"} s</b></div>
-    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Left, s" id="hang-L"><input type="number" inputmode="numeric" placeholder="Right, s" id="hang-R"><button class="btn sm" data-a="hang-test">Save</button></div></section>
-  <section class="card"><details><summary>Lift records (${prs.length})</summary><div class="stack" style="gap:6px;margin-top:8px">${prs.length?prs.map(([n,b])=>`<div class="row between"><span>${esc(n)}</span><b>${b.w} kg × ${b.r}</b></div>`).join(""):'<span class="muted small">Heaviest set per exercise shows up here after your first sessions.</span>'}</div></details></section>`;
-}
-function viewMore(){
-  return `<div class="stack">${viewMetrics()}<section class="card"><span class="eyebrow">Backup</span><div class="muted small">Everything is stored on this phone, works without signal, and is not synced anywhere else. Export a backup now and then (Files, iCloud, email to yourself).</div>
+function backupCard(){
+  return `<section class="card"><span class="eyebrow">Backup</span><div class="muted small">Everything is stored on this phone, works without signal, and is not synced anywhere else. Export a backup now and then (Files, iCloud, email to yourself).</div>
   <div class="row"><button class="btn sm" data-a="download">Download backup</button><button class="btn sm" data-a="export">${showExport?"Hide JSON":"Show JSON"}</button><button class="btn sm" data-a="import-toggle">${showImport?"Close import":"Import backup"}</button></div>
   ${showExport?`<textarea id="export-box" readonly>${esc(JSON.stringify({state:S,logs:LOGS},null,1))}</textarea><div><button class="btn sm" data-a="copy-export">Copy</button></div>`:""}
-  ${showImport?`<div class="muted small">Pick a backup file or paste its JSON. This replaces everything on this phone.</div><input type="file" id="import-file" accept=".json,application/json"><textarea id="import-box" data-f="import" placeholder="Or paste JSON here">${esc(importText)}</textarea><div><button class="btn sm primary" style="--c:var(--warn)" data-a="import-go">${confirmKey==="import"?"Tap again to replace all data":"Replace data with this backup"}</button></div>`:""}</section></div>`;
+  ${showImport?`<div class="muted small">Pick a backup file or paste its JSON. This replaces everything on this phone.</div><input type="file" id="import-file" accept=".json,application/json"><textarea id="import-box" data-f="import" placeholder="Or paste JSON here">${esc(importText)}</textarea><div><button class="btn sm primary" style="--c:var(--warn)" data-a="import-go">${confirmKey==="import"?"Tap again to replace all data":"Replace data with this backup"}</button></div>`:""}</section>`;
 }
-
+function backBtn(){return `<div><button class="btn sm ghost" data-a="more-go" data-k="">‹ Back to More</button></div>`}
+function viewMeasure(){
+  const ws=LOGS.filter(l=>l.type==="weight");
+  return `<section class="card"><span class="eyebrow">Body weight</span>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="decimal" placeholder="kg" id="m-weight"><input type="date" id="m-date" value="${today()}"><button class="btn sm" data-a="weight-save">Save</button></div>
+    ${ws.length?ws.map(x=>`<div class="row between"><span>${fmtDate(x.date)}</span><span class="row"><b>${x.kg} kg</b><button class="btn sm ghost" data-a="del" data-id="${x.id}" aria-label="Delete entry">${confirmKey==="del-"+x.id?"Confirm":"✕"}</button></span></div>`).join("<hr>"):'<div class="muted small">No weight logged yet.</div>'}</section>
+  <section class="card"><span class="eyebrow">Height</span>
+    <div class="row between"><span class="muted">Current</span><b>${S.metrics.height?S.metrics.height+" cm":"–"}</b></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="cm" id="m-height"><button class="btn sm" data-a="height-save">Save height</button></div></section>`;
+}
+function skillRecords(){
+  const rec={};
+  const put=(k,s,date)=>{if(s&&(!rec[k]||s>rec[k].s))rec[k]={s,date}};
+  for(const l of LOGS){
+    if(l.type==="test")put(l.skill+" · "+l.level,l.seconds,l.date);
+    else if(l.type==="session")for(const it of l.items||[])if(it.kind==="hold"&&/ · /.test(it.ex))put(it.ex,Math.max(0,...(it.sets||[]).map(x=>x.s||0)),l.date);
+  }
+  return rec;
+}
+function viewRecords(){
+  const rec=skillRecords();
+  const prs=[];
+  for(const l of LOGS)if(l.type==="session")for(const it of l.items||[])if(it.kind==="lift")for(const x of it.sets||[])if(x.w&&x.r){const e=Math.round(x.w*(1+x.r/30)),c=prs.find(q=>q.n===it.ex);if(!c)prs.push({n:it.ex,w:x.w,r:x.r,e,date:l.date});else if(e>c.e)Object.assign(c,{w:x.w,r:x.r,e,date:l.date})}
+  prs.sort((a,b)=>a.n.localeCompare(b.n));
+  return `${Object.keys(SKILLS).map(k=>{const sk=S.skills[k],rows=SKILLS[k].levels.map(lv=>[lv,rec[SKILLS[k].name+" · "+lv]]).filter(r=>r[1]);
+    return `<section class="card"><div class="row between"><h3>${SKILLS[k].name}</h3><span class="muted small">now: ${SKILLS[k].levels[sk.level]}${sk.baseline?` · target ${holdTarget(k)} s`:""}</span></div>
+    ${rows.length?rows.map(([lv,r])=>`<div class="row between"><span>${lv}</span><span><b>${r.s} s</b> <span class="muted small">${fmtDate(r.date)}</span></span></div>`).join(""):'<div class="muted small">Not tested yet.</div>'}
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="New max hold, seconds" id="sk-test-${k}"><button class="btn sm" data-a="sk-test" data-k="${k}">Save</button></div></section>`}).join("")}
+  <section class="card"><h3>One-arm hang</h3><div class="row between"><span class="muted">Left / Right</span><b>${S.hang.L??"–"} s / ${S.hang.R??"–"} s</b></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Left, s" id="hang-L"><input type="number" inputmode="numeric" placeholder="Right, s" id="hang-R"><button class="btn sm" data-a="hang-test">Save</button></div></section>
+  <section class="card"><h3>Lift records</h3><div class="muted small">Best set per exercise, with an estimated one-rep max.</div>
+    ${prs.length?prs.map(q=>`<div class="row between"><span>${esc(q.n)}<br><span class="muted small">${fmtDate(q.date)}</span></span><span style="text-align:right"><b>${q.w} kg × ${q.r}</b><br><span class="muted small">1RM ≈ ${q.e} kg</span></span></div>`).join("<hr>"):'<div class="muted small">Shows up here after your first sessions.</div>'}</section>`;
+}
+function viewMore(){
+  if(moreSub==="measure")return `<div class="stack">${backBtn()}${viewMeasure()}</div>`;
+  if(moreSub==="records")return `<div class="stack">${backBtn()}${viewRecords()}</div>`;
+  if(moreSub==="backup")return `<div class="stack">${backBtn()}${backupCard()}</div>`;
+  const w=lastOf("weight");
+  const row=(k,t,d)=>`<button class="btn" style="display:flex;justify-content:space-between;align-items:center;text-align:left;min-height:56px" data-a="more-go" data-k="${k}"><span><b>${t}</b><br><span class="muted small">${d}</span></span><span class="muted">›</span></button>`;
+  return `<div class="stack">
+  ${row("measure","Measurements",w?`${w.kg} kg on ${fmtDate(w.date)}${S.metrics.height?` · ${S.metrics.height} cm`:""}`:"Body weight and height")}
+  ${row("records","Records","Skill holds and lift max strength")}
+  ${row("backup","Backup and restore","Keep your data safe")}
+  </div>`;
+}
 /* ================= EVENTS ================= */
 document.addEventListener("input",e=>{
   const t=e.target,f=t.dataset.f;if(!f)return;const i=+t.dataset.i;
@@ -716,8 +737,10 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-a]");if(!b||b.tagName==="SELECT")return;const a=b.dataset.a;
   if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&a!=="item-rm"&&!a.startsWith("del"))confirmKey=null;
   switch(a){
-    case "tab":tab=b.dataset.k;render();window.scrollTo(0,0);break;
+    case "tab":if(b.dataset.k==="more")moreSub=null;tab=b.dataset.k;render();window.scrollTo(0,0);break;
     case "noop":break;
+    case "records-go":tab="more";moreSub="records";render();window.scrollTo(0,0);break;
+    case "more-go":moreSub=b.dataset.k||null;render();window.scrollTo(0,0);break;
     case "pick-open":pick={cat:catOrder(session.split)[0]};render();break;
     case "pick-close":pick=null;render();break;
     case "pick-cat":pick.cat=b.dataset.k;render();break;
@@ -728,7 +751,7 @@ document.addEventListener("click",async e=>{
       const f=catalog().find(x=>x.n.toLowerCase()===n.toLowerCase());const id=uid()+session.order.length;session.order.push(id);session.slots[id]=makeSlot(f);pick=null;saveDraft();render();break}
     case "item-rm":{const id=b.dataset.slot;if(confirmKey==="rm-"+id){confirmKey=null;session.order=session.order.filter(x=>x!==id);delete session.slots[id];saveDraft();render()}else{confirmKey="rm-"+id;render()}break}
     case "day":selDay=selDay===b.dataset.k?null:b.dataset.k;render();break;
-    case "weight-save":{const v=num($("#m-weight").value);if(!v){toast("Enter your weight in kg");break}await putLog({id:uid(),type:"weight",date:today(),ts:Date.now(),kg:v});render();toast("Weight saved");break}
+    case "weight-save":{const v=num($("#m-weight").value),dt=$("#m-date").value||today();if(!v){toast("Enter your weight in kg");break}await putLog({id:uid(),type:"weight",date:dt,ts:Date.parse(dt+"T12:00:00"),kg:v});render();toast("Weight saved");break}
     case "height-save":{const v=num($("#m-height").value);if(!v){toast("Enter your height in cm");break}S.metrics.height=v;saveState();render();toast("Height saved");break}
     case "psub":psub=b.dataset.k;render();break;
     case "psub-go":tab="progress";psub=b.dataset.k;render();window.scrollTo(0,0);break;

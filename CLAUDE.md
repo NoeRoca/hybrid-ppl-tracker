@@ -49,4 +49,4 @@ Priority focus on hip and pelvis mobility, posture (upper back, neck) and shin c
 Irregular, 8–15 km when he runs. Big runs after long gaps are a common shin-splint trigger, so the app suggests ~5–6 km after more than a week off. Keep that logic.
 
 ### Metrics
-More tab: body weight and height, skill records (a new record resets the hold target to 70%), one-arm hang, lift PRs. These replace the old home-screen baseline card.
+More tab is a settings-style menu: Measurements (dated weight history, height), Records (skill holds per level with dates, one-arm hang, lift bests with estimated 1RM; a new skill record resets the hold target to 70%), Backup. These replace the old home-screen baseline card.
