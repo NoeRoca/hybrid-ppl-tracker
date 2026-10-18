@@ -766,7 +766,8 @@ function viewRecords(){
     ${rows.length?rows.map(([x,r])=>`<div class="row between"><span>${x}</span><span><b>${r.s} s</b> <span class="muted small">${fmtDate(r.date)}</span></span></div>`).join(""):'<div class="muted small">No records yet.</div>'}
     <div class="muted small" style="margin-top:4px">Add a record (any level; a record at your training level also updates your hold target):</div>
     <div class="row" style="flex-wrap:nowrap"><select id="rec-lvl-${k}" aria-label="Level">${lv.map((l,i)=>`<option value="${i}" ${i===sk.level?"selected":""}>${l}</option>`).join("")}</select><label class="small row" style="flex:none;gap:4px"><input type="checkbox" id="rec-band-${k}"> Banded</label></div>
-    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Max hold, seconds" id="sk-test-${k}"><button class="btn sm" data-a="rec-save" data-k="${k}">Save</button></div></section>`}).join("")}
+    <div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" placeholder="Max hold, seconds" id="sk-test-${k}"><button class="btn sm" data-a="rec-save" data-k="${k}">Save</button></div>
+    ${(()=>{const ent=LOGS.filter(l=>l.type==="test"&&l.skill===nm);return ent.length?`<details><summary class="small">Edit or delete entries (${ent.length})</summary><div class="stack" style="gap:6px;margin-top:8px">${ent.map(l=>`<div class="row between"><span>${esc(l.level)} · <b>${l.seconds} s</b> <span class="muted small">${fmtDate(l.date)}</span></span><button class="btn sm ghost" data-a="del" data-id="${l.id}" aria-label="Delete entry">${confirmKey==="del-"+l.id?"Confirm":"✕"}</button></div>`).join("")}</div></details>`:""})()}</section>`}).join("")}
   <section class="card"><h3>Hangs</h3>
     <div class="row between"><span class="muted">One-arm, left</span><b>${hl(S.hang.L,hd.L)}</b></div>
     <div class="row between"><span class="muted">One-arm, right</span><b>${hl(S.hang.R,hd.R)}</b></div>
@@ -982,7 +983,7 @@ document.addEventListener("click",async e=>{
     case "run-save":{const km=num(runDraft.km);if(!km){toast("Enter the distance");break}
       await putLog({id:uid(),type:"run",date:runDraft.date||today(),ts:Date.parse((runDraft.date||today())+"T12:00:00"),km,min:num(runDraft.min),shin:runDraft.shin,note:runDraft.note.trim()});
       runDraft={date:today(),km:"",min:"",shin:false,note:""};tab="today";render();window.scrollTo(0,0);toast("Run saved");break}
-    case "del":{const id=b.dataset.id;if(confirmKey==="del-"+id){confirmKey=null;await delLog(id);render()}else{confirmKey="del-"+id;render()}break}
+    case "del":{const id=b.dataset.id;if(confirmKey==="del-"+id){confirmKey=null;const dl=LOGS.find(x=>x.id===id);await delLog(id);if(dl&&dl.type==="test"){const sk=Object.keys(SKILLS).find(x=>SKILLS[x].name===dl.skill);if(sk)setSkillLevel(sk,S.skills[sk].level)}render()}else{confirmKey="del-"+id;render()}break}
     case "export":showExport=!showExport;render();break;
     case "download":{const blob=new Blob([JSON.stringify({state:S,logs:LOGS},null,1)],{type:"application/json"});const u=URL.createObjectURL(blob);const x=document.createElement("a");x.href=u;x.download=`training-backup-${today()}.json`;document.body.appendChild(x);x.click();x.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);break}
     case "import-toggle":showImport=!showImport;importText="";render();break;
@@ -1048,7 +1049,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v11"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v12"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
