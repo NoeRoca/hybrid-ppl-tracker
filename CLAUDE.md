@@ -9,10 +9,11 @@ This repo is public: never add personal health details, real names of other peop
 1. **Never break offline mode.** No runtime network calls, no external APIs, no CDN dependency the app needs to function. Google Fonts are optional (cached by the service worker, system fonts as fallback).
 2. **Bump `VERSION` in `sw.js` on every change** to any shipped file, or phones keep the old version. Add any new file to the `SHELL` list in `sw.js`.
 3. **Never lose his data.** Data lives in `localStorage` under key `hybrid-ppl-local-v1` as `{state, logs}`. Any change to the data shape must stay backward compatible: read old shapes, add defaults for new fields (`Object.assign(clone(DEFAULT_STATE), saved)` pattern). Never rename the storage key. Keep the Backup export/import working.
-4. **Phone first.** Test at 390px width, light and dark mode. Tap targets at least 40px. No horizontal scroll.
-5. Keep it a single `index.html` (vanilla JS, no build step) unless Noé asks otherwise.
-6. UI language: English. Units: kg, seconds, km.
-7. Training logic below is deliberate. **Don't change program rules or progression logic unless Noé explicitly asks.** Design and UX changes are fine.
+4. **Look: "Rings"** (Apple-fitness style): system font, rounded cards, ring-style calendar days, pink accent, pill buttons, dark and light mode via CSS tokens at the top of `index.html`. Keep new UI in that style, no external fonts.
+5. **Phone first.** Test at 390px width, light and dark mode. Tap targets at least 40px. No horizontal scroll.
+6. Keep it a single `index.html` (vanilla JS, no build step) unless Noé asks otherwise.
+7. UI language: English. Units: kg, seconds, km.
+8. Training logic below is deliberate. **Don't change program rules or progression logic unless Noé explicitly asks.** Design and UX changes are fine.
 
 ## Workflow
 
