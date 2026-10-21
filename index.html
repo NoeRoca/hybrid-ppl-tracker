@@ -157,7 +157,9 @@ input[type=number],input[type=text],input[type=date],select,textarea{border:0;bo
 nav.tabs{background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:0}
 nav.tabs button{font-family:var(--body);font-weight:700;font-size:12px;letter-spacing:.04em}
 nav.tabs button.on{color:var(--ink);border-top-color:var(--accent)}
-.sheet>div{border-radius:24px 24px 0 0}
+.sheet>div{border-radius:24px 24px 0 0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+html.noscroll,html.noscroll body{overflow:hidden}
+.sheet button{touch-action:manipulation}
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .stat{background:var(--sunk);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:2px}
 .stat b{font:800 26px/1.1 var(--display);letter-spacing:-.02em}
@@ -185,6 +187,7 @@ nav.tabs button.on{color:var(--ink);border-top-color:var(--accent)}
 </div>
 <div id="timer" class="timer" hidden></div>
 <div id="toast" class="toast" hidden></div>
+<div id="overlay"></div>
 <nav class="tabs" aria-label="Sections"><div class="in" id="tabs"></div></nav>
 
 <script>
@@ -331,15 +334,30 @@ async function init(){
 function loadLocal(){
   const d=lsGet(LKEY);
   if(d&&d.state){S=Object.assign(clone(DEFAULT_STATE),d.state);LOGS=d.logs||[];}
-  else{S=clone(DEFAULT_STATE);LOGS=clone(SEED_LOGS);lsSet(LKEY,{state:S,logs:LOGS});}
+  else{S=clone(DEFAULT_STATE);S.flags={backfill1021:true};LOGS=clone(SEED_LOGS);lsSet(LKEY,{state:S,logs:LOGS});}
   if(migrate())lsSet(LKEY,{state:S,logs:LOGS});
 }
-// One-time: your last pull-up day was the 17th, so move the notes-based weeks 1-3 back by one day (later).
+// One-time fixes for this phone's data. Each runs once (flag in S.flags).
 function migrate(){
-  S.flags=S.flags||{};
-  if(S.flags.seedShift1)return false;
-  for(const l of LOGS)if(String(l.id).startsWith("seed-")){const d=new Date(l.date+"T12:00:00");d.setDate(d.getDate()+1);l.date=dstr(d);l.ts=(l.ts||0)+864e5}
-  S.flags.seedShift1=true;sortLogs();return true;
+  S.flags=S.flags||{};let ch=false;
+  if(!S.flags.seedShift1){
+    for(const l of LOGS)if(String(l.id).startsWith("seed-")){const d=new Date(l.date+"T12:00:00");d.setDate(d.getDate()+1);l.date=dstr(d);l.ts=(l.ts||0)+864e5}
+    S.flags.seedShift1=true;sortLogs();ch=true;
+  }
+  if(!S.flags.backfill1021){
+    const D="2026-10-21",at=(d,h)=>Date.parse(d+"T"+h+":00:00");
+    LOGS=LOGS.filter(l=>!(l.type==="rest"&&l.date===D));
+    if(!LOGS.some(l=>l.date==="2026-10-20"&&["session","run","pullup","rest"].includes(l.type)))LOGS.push({id:"bf-rest-1020",type:"rest",date:"2026-10-20",ts:at("2026-10-20","12")});
+    const sets=[6,6,6,6,6,6,4,4,4,4],pu=LOGS.find(l=>l.type==="pullup"&&l.date===D&&l.day==="density");
+    if(pu){pu.sets=sets;pu.target=pu.target||6}else LOGS.push({id:"bf-pu-1021",type:"pullup",date:D,ts:at(D,"18"),day:"density",target:6,sets});
+    if(S.pu.next==="density")S.pu.next="pyramid";
+    const add=[{slot:"bf",ex:"Bulgarian split squat",kind:"lift",sets:[{w:24,r:10},{w:24,r:10},{w:24,r:9}]},{slot:"bf",ex:"Kettlebell tibialis raise",kind:"lift",sets:[{w:8,r:10},{w:8,r:10},{w:8,r:10}]}];
+    const ls=LOGS.find(l=>l.type==="session"&&l.split==="legs"&&l.date===D);
+    if(ls)ls.items=(ls.items||[]).filter(i=>!add.some(a=>a.ex===i.ex)).concat(add);
+    else LOGS.push({id:"bf-legs-1021",type:"session",split:"legs",date:D,ts:at(D,"19"),items:add});
+    S.flags.backfill1021=true;sortLogs();ch=true;
+  }
+  return ch;
 }
 let needRender=false;
 function softRender(){const a=document.activeElement; if(a&&(a.tagName==="INPUT"||a.tagName==="SELECT"||a.tagName==="TEXTAREA")){needRender=true;return} render();}
@@ -384,16 +402,21 @@ function renderTabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button data-a="ta
 const openD=new Set();
 document.addEventListener("toggle",e=>{const d=e.target;if(d.tagName!=="DETAILS")return;const k=(d.querySelector("summary")?.textContent||"").trim();d.open?openD.add(k):openD.delete(k)},true);
 function restoreDetails(){document.querySelectorAll("#main details").forEach(d=>{if(openD.has((d.querySelector("summary")?.textContent||"").trim()))d.open=true})}
+function renderOverlay(){
+  const ov=tab==="today"&&sheet?sheetView():(tab==="session"&&session&&pick)?pickerView():"";
+  $("#overlay").innerHTML=ov;document.documentElement.classList.toggle("noscroll",!!ov);
+}
 function render(){
   renderTabs();
   const now=new Date();
   $("#hdr-date").textContent=now.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
   const m=$("#main");
-  if(session&&tab==="session"){ $("#hdr-title").textContent=(session.day||SPLITS[session.split].name)+" session"; m.innerHTML=viewSession(); restoreDetails(); return; }
+  if(session&&tab==="session"){ $("#hdr-title").textContent=(session.editId?"Edit ":"")+(session.day||SPLITS[session.split].name)+" session"; m.innerHTML=viewSession(); restoreDetails(); renderOverlay(); return; }
   if(tab==="session")tab="today";
   $("#hdr-title").textContent=tab==="more"&&moreSub?({measure:"Measurements",records:"Records",backup:"Backup",program:"Programs",log:"Activity log"})[moreSub]:TITLES[tab];
   m.innerHTML=({today:viewToday,progress:viewProgress,more:viewMore,routine:viewRoutine,run:viewRunScreen,pullup:viewPullups})[tab]();
   restoreDetails();
+  renderOverlay();
 }
 
 function plate(k){const s=SPLITS[k];return `<div class="plate ${k==="legs"?"legs":""}" style="--c:${cvar(k)}" aria-hidden="true"><span>${s.plate}</span></div>`}
@@ -469,7 +492,6 @@ function viewToday(){
     <div class="muted small">Tick items one by one. About 15 min · hips first</div>
   </section>
   ${lastCard()}
-  ${sheet?sheetView():""}
   </div>`;
 }
 function puHomeCard(){
@@ -511,11 +533,12 @@ const EXTRAS=[
   ["Close-grip bench press","Triceps","lift"],["Hip thrust","Legs","lift"],["Walking lunge","Legs","lift"],["Two-arm dead hang","Skills & holds","hold","tah"],
 ];
 function catOrder(k){const f=CAT_FIRST[k]||[];return f.concat(CATS.filter(c=>!f.includes(c)))}
+function rangeFor(r,kind){const parts=String(r||"").split(" / ");if(parts.length<2)return r;const secs=parts.find(x=>/\bs\b/.test(x)),other=parts.find(x=>x!==secs);return kind==="hold"?(secs||r):(other||r)}
 function catalog(){
   const m=new Map();
   for(const sp of ORDER)for(const sl of PROGRAM[sp]){
     if(sl.kind==="skill")continue;
-    for(const o of optsFor(sp,sl))if(!m.has(o.n))m.set(o.n,{n:o.n,k:o.k,cat:CAT_OF[sl.id]||"Chest",key:sl.id,lo:sl.lo,hi:sl.hi,rest:sl.rest,side:sl.side,sets:sl.sets,range:sl.range});
+    for(const o of optsFor(sp,sl))if(!m.has(o.n))m.set(o.n,{n:o.n,k:o.k,cat:CAT_OF[sl.id]||"Chest",key:sl.id,lo:sl.lo,hi:sl.hi,rest:sl.rest,side:sl.side,sets:sl.sets,range:rangeFor(sl.range,o.k)});
   }
   for(const [n,cat,k,key] of EXTRAS)if(!m.has(n))m.set(n,{n,k,cat,key:key||"x",sets:3,range:k==="lift"?"8–12":"",rest:90,lo:k==="lift"?8:undefined,hi:k==="lift"?12:undefined});
   for(const c of (S.custom.mine||[]))if(!m.has(c.n))m.set(c.n,{n:c.n,k:c.k,cat:c.cat,key:"mine",sets:3,range:"",rest:90});
@@ -543,6 +566,30 @@ function migrateDraft(d){
   }
   return out;
 }
+function sessionFromLog(l){
+  const ns={split:l.split,started:(l.ts||Date.now())-(l.min||0)*60000,date:l.date,warm:[],order:[],slots:{},editId:l.id,editTs:l.ts,editMin:l.min||null};
+  (l.items||[]).forEach((it,i)=>{
+    const id=uid()+i,sk=it.kind==="hold"?Object.keys(SKILLS).find(k=>String(it.ex).startsWith(SKILLS[k].name+" · ")):null;
+    let sl;
+    if(sk){sl=makeSlot({skill:sk});sl.ex=it.ex;sl.test=false;sl.sets=(it.sets||[]).map(x=>({s:x.s,done:true}))}
+    else{const c=catalog().find(e=>e.n===it.ex&&!e.skill);sl=c?makeSlot(c):makeSlot({n:it.ex,k:it.kind,cat:"",key:it.slot||"x",sets:(it.sets||[]).length,range:"",rest:90});
+      sl.def.kind=it.kind;sl.sets=(it.sets||[]).map(x=>({w:x.w??"",r:x.r??"",s:x.s??"",done:false}))}
+    ns.order.push(id);ns.slots[id]=sl;
+  });
+  return ns;
+}
+function puDraftFromLog(l){
+  const base={day:l.day,editId:l.id,editDate:l.date,editTs:l.ts},ss=l.sets||[];
+  if(l.day==="max")return {...base,sets:Array.from({length:Math.max(3,ss.length)},(_,i)=>ss[i]==null?"":String(ss[i]))};
+  if(l.day==="density")return {...base,target:l.target||S.pu.densityTarget,sets:Array.from({length:Math.max(10,ss.length)},(_,i)=>({r:ss[i]==null?"":ss[i],done:ss[i]!=null}))};
+  const ld=l.ladders||[];
+  return {...base,peak:S.pu.ladderPeak,ladders:Array.from({length:Math.max(5,ld.length)},(_,i)=>ld[i]?{peak:ld[i].peak,clean:ld[i].clean!==false,done:true}:{peak:S.pu.ladderPeak,clean:true,done:false})};
+}
+function puCount(d){
+  if(d.day==="max")return {n:d.sets.filter(v=>v!=="").length,t:3};
+  if(d.day==="density")return {n:d.sets.filter(x=>x.done).length,t:10};
+  return {n:d.ladders.filter(x=>x.done).length,t:5};
+}
 function saveDraft(){lsSet("hybrid-ppl-draft",session)}
 
 const WARM={
@@ -556,13 +603,12 @@ function viewSession(){
   const warm=[...WARM[k],...WARM.all];
   return `<div class="stack">
   <div class="row between"><div class="row">${plate(k)}<span class="muted small">Started ${new Date(session.started).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</span></div>
-  <span class="row" style="gap:6px"><button class="btn sm" data-a="prog-from-session">Program</button><button class="btn sm ghost" data-a="cancel-session">${confirmKey==="cancel"?"Tap again to discard":"Discard"}</button></span></div>
-  ${pu.due?`<div class="card edge" style="--c:var(--pu)"><div class="row between"><div><span class="eyebrow">First</span><h3>Pull-ups: ${PU_DAYS[S.pu.next].name}</h3></div><button class="btn sm" data-a="pu-open">Log it</button></div>${k==="pull"?'<div class="muted small">No pulldowns or extra pull-ups today; the program covers vertical pulling.</div>':""}</div>`:""}
+  <span class="row" style="gap:6px"><button class="btn sm" data-a="prog-from-session">Program</button><button class="btn sm ghost" data-a="cancel-session">${session.editId?"Cancel edit":confirmKey==="cancel"?"Tap again to discard":"Discard"}</button></span></div>
+  ${pu.due&&!session.editId?`<div class="card edge" style="--c:var(--pu)"><div class="row between"><div><span class="eyebrow">First</span><h3>Pull-ups: ${PU_DAYS[S.pu.next].name}</h3></div><button class="btn sm" data-a="pu-open">Log it</button></div>${k==="pull"?'<div class="muted small">No pulldowns or extra pull-ups today; the program covers vertical pulling.</div>':""}</div>`:""}
   <details class="card"><summary>Warm-up ideas</summary><ul class="muted small" style="margin:8px 0 0;padding-left:18px">${warm.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></details>
   ${session.order.map(id=>slotCard(k,id)).join("")||'<div class="hint">Nothing here yet. Add your first exercise when you start it.</div>'}
   <button class="btn" style="min-height:48px" data-a="pick-open">+ Add exercise</button>
-  <button class="btn primary ink" data-a="finish">Finish and save</button>
-  ${pick?pickerView():""}
+  <button class="btn primary ink" data-a="finish">${confirmKey==="finish"?"Tap again to save":session.editId?"Save changes":"Finish and save"}</button>
   </div>`;
 }
 function pickerView(){
@@ -629,13 +675,13 @@ function newPuDraft(){
   return{day,peak:S.pu.ladderPeak,ladders:Array.from({length:5},()=>({peak:S.pu.ladderPeak,clean:true,done:false}))};
 }
 function viewPullups(){
-  if(!puDraft||puDraft.day!==S.pu.next)puDraft=newPuDraft();
+  if(!puDraft||(!puDraft.editId&&puDraft.day!==S.pu.next))puDraft=newPuDraft();
   const d=puDraft, info=PU_DAYS[d.day], pu=puSummary();
-  const lastMax=LOGS.find(l=>l.type==="pullup"&&l.day==="max");
+  const lastSame=LOGS.find(l=>l.type==="pullup"&&l.day===d.day&&l.id!==d.editId);
+  const lastTxt=lastSame?(d.day==="pyramid"?(lastSame.ladders||[]).map(x=>x.peak+(x.clean===false?"✗":"")).join(" / ")+" peak":(lastSame.sets||[]).join(" · "))+` (${puLogTotal(lastSame)} reps, ${fmtDate(lastSame.date)}${lastSame.approx?", approx.":""})`:"";
   let body="";
   if(d.day==="max"){
-    body=`<div class="grid10" style="grid-template-columns:repeat(3,minmax(0,1fr))">${d.sets.map((v,i)=>`<label class="cell"><span class="eyebrow">Set ${i+1}</span><input type="number" inputmode="numeric" id="pu-max-${i}" data-f="pumax" data-i="${i}" value="${esc(v)}"></label>`).join("")}</div>
-    ${lastMax?`<div class="muted small">Last max day: ${lastMax.sets.join(" · ")} (total ${puLogTotal(lastMax)})</div>`:""}`;
+    body=`<div class="grid10" style="grid-template-columns:repeat(3,minmax(0,1fr))">${d.sets.map((v,i)=>`<label class="cell"><span class="eyebrow">Set ${i+1}</span><input type="number" inputmode="numeric" id="pu-max-${i}" data-f="pumax" data-i="${i}" value="${esc(v)}"></label>`).join("")}</div>`;
   } else if(d.day==="density"){
     body=`<div class="grid10">${d.sets.map((s,i)=>`<div class="cell"><input type="number" inputmode="numeric" aria-label="Set ${i+1} reps" id="pu-den-${i}" data-f="puden" data-i="${i}" value="${esc(s.r)}"><button class="chk ${s.done?"on":""}" style="width:100%" data-a="pu-den-done" data-i="${i}">${s.done?"✓":i+1}</button></div>`).join("")}</div>
     <div class="muted small">Target ${d.target}. Tap each set when done; lower the number if you came up short.</div>`;
@@ -644,16 +690,17 @@ function viewPullups(){
     <div class="muted small">Peak ${d.peak} on every ladder: 1 → ${d.peak} → 1 = ${d.peak*d.peak} reps each. Stop each ladder one rep before failure.</div>`;
   }
   return `<div class="stack">
-    <div><button class="btn sm ghost" data-a="tab" data-k="${session?"session":"today"}">‹ Back</button></div>
+    <div><button class="btn sm ghost" data-a="pu-back">‹ Back</button></div>
     <section class="card edge" style="--c:var(--pu)">
-      <div class="row between"><span class="eyebrow">Next session</span>${pu.due?'<span class="pill due" style="--c:var(--pu)">Due today</span>':`<span class="pill">Last one ${pu.d} d ago</span>`}</div>
+      <div class="row between"><span class="eyebrow">${d.editId?"Editing":"Next session"}</span>${d.editId?`<span class="pill">${fmtDate(d.editDate)}</span>`:pu.due?'<span class="pill due" style="--c:var(--pu)">Due today</span>':`<span class="pill">Last one ${pu.d} d ago</span>`}</div>
       <div class="big">${info.name}</div>
       <div class="muted">${info.desc}</div>
       ${body}
+      ${lastSame?`<div class="muted small">Last ${esc(info.name.toLowerCase())}: ${esc(lastTxt)}</div>`:""}
       <div class="row"><button class="btn sm" data-a="rest" data-s="${info.rest}">Rest ${info.rest>=60?Math.floor(info.rest/60)+":"+pad(info.rest%60):info.rest+" s"}</button>
-      <button class="btn primary" style="--c:var(--pu)" data-a="pu-save" ${ready?"":"disabled"}>Save ${info.name.toLowerCase()}</button></div>
+      <button class="btn primary" style="--c:var(--pu)" data-a="pu-save" ${ready?"":"disabled"}>${confirmKey==="pu-save"?`Only ${puCount(d).n} of ${puCount(d).t} done. Tap again to save`:d.editId?"Save changes":"Save "+info.name.toLowerCase()}</button></div>
     </section>
-    <section class="card"><details><summary class="small">Not the right day type? Switch</summary><div class="seg" style="margin-top:8px" role="group" aria-label="Next day">${Object.keys(PU_DAYS).map(k=>`<button class="${S.pu.next===k?"on":""}" data-a="pu-next" data-k="${k}">${PU_DAYS[k].name}</button>`).join("")}</div></details></section>
+    ${d.editId?"":`<section class="card"><details><summary class="small">Not the right day type? Switch</summary><div class="seg" style="margin-top:8px" role="group" aria-label="Next day">${Object.keys(PU_DAYS).map(k=>`<button class="${S.pu.next===k?"on":""}" data-a="pu-next" data-k="${k}">${PU_DAYS[k].name}</button>`).join("")}</div></details></section>`}
   </div>`;
 }
 function puChart(hist){
@@ -793,7 +840,7 @@ function histCard(list,title){
     else if(l.type==="rest"){c="--muted";title="Rest day"}
     else if(l.type==="weight"){c="--muted";title=`Weight · ${l.kg} kg`}
     else if(l.type==="test"){c="--muted";title=`Test · ${l.skill}`;detail=`${l.level}: ${l.seconds} s`}
-    return `<div class="logitem"><span class="dot" style="--c:var(${c})"></span><div style="min-width:0;flex:1"><div class="row between"><b>${esc(title)}</b><span class="muted small">${fmtDate(l.date)}${l.approx?" (approx.)":""}</span></div><div class="muted small" style="overflow-wrap:anywhere">${esc(detail)}</div></div>${l.seed||l.id.startsWith("seed")?"":`<button class="btn sm ghost" data-a="del" data-id="${l.id}" aria-label="Delete entry">${confirmKey==="del-"+l.id?"Confirm":"✕"}</button>`}</div>`}).join("<hr>");
+    return `<div class="logitem"><span class="dot" style="--c:var(${c})"></span><div style="min-width:0;flex:1"><div class="row between"><b>${esc(title)}</b><span class="muted small">${fmtDate(l.date)}${l.approx?" (approx.)":""}</span></div><div class="muted small" style="overflow-wrap:anywhere">${esc(detail)}</div></div>${["session","pullup","run"].includes(l.type)?`<button class="btn sm ghost" data-a="edit-log" data-id="${l.id}" aria-label="Edit entry">✎</button>`:""}${l.seed||l.id.startsWith("seed")?"":`<button class="btn sm ghost" data-a="del" data-id="${l.id}" aria-label="Delete entry">${confirmKey==="del-"+l.id?"Confirm":"✕"}</button>`}</div>`}).join("<hr>");
   return `<section class="card"><span class="eyebrow">${title}</span>${items||'<p class="muted">Nothing logged yet.</p>'}</section>`;
 }
 function runCard(){
@@ -801,9 +848,9 @@ function runCard(){
   <div class="row" style="flex-wrap:nowrap"><input type="date" id="run-date" data-f="run" data-k="date" value="${esc(runDraft.date)}"><input type="number" inputmode="decimal" placeholder="km" id="run-km" data-f="run" data-k="km" value="${esc(runDraft.km)}"><input type="number" inputmode="numeric" placeholder="min" id="run-min" data-f="run" data-k="min" value="${esc(runDraft.min)}"></div>
   <div class="row"><button class="btn sm ${runDraft.shin?"primary":""}" style="--c:var(--warn)" data-a="run-shin">${runDraft.shin?"Shins hurt":"Shins fine"}</button><input type="text" placeholder="Note (optional)" id="run-note" data-f="run" data-k="note" value="${esc(runDraft.note)}" style="flex:1"></div>
   ${runAdvice()}
-  <div><button class="btn primary ink" data-a="run-save" ${ready?"":"disabled"}>Save run</button></div></section>`;
+  <div><button class="btn primary ink" data-a="run-save" ${ready?"":"disabled"}>${runDraft.editId?"Save changes":"Save run"}</button></div></section>`;
 }
-function viewRunScreen(){return `<div class="stack"><div><button class="btn sm ghost" data-a="tab" data-k="today">‹ Back to Home</button></div>${runCard()}</div>`}
+function viewRunScreen(){return `<div class="stack"><div><button class="btn sm ghost" data-a="run-back">‹ Back to Home</button></div>${runCard()}</div>`}
 function viewLog(){return `<div class="stack">${histCard(LOGS,"History")}</div>`}
 function backupCard(){
   return `<section class="card"><span class="eyebrow">Backup</span><div class="muted small">Everything is stored on this phone, works without signal, and is not synced anywhere else. Export a backup now and then (Files, iCloud, email to yourself).</div>
@@ -1023,10 +1070,19 @@ document.addEventListener("change",e=>{
 });
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-a]");if(!b||b.tagName==="SELECT")return;const a=b.dataset.a;
-  if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&a!=="item-rm"&&a!=="load-prog"&&a!=="fresh"&&a!=="fresh-menu"&&!a.startsWith("del"))confirmKey=null;
+  if(a!=="cancel-session"&&a!=="start"&&a!=="import-go"&&a!=="item-rm"&&a!=="load-prog"&&a!=="fresh"&&a!=="finish"&&a!=="pu-save"&&a!=="edit-log"&&a!=="fresh-menu"&&!a.startsWith("del"))confirmKey=null;
   switch(a){
-    case "tab":progFrom=false;if(b.dataset.k==="more")moreSub=null;tab=b.dataset.k;render();window.scrollTo(0,0);break;
+    case "tab":progFrom=false;sheet=false;if(b.dataset.k==="more")moreSub=null;tab=b.dataset.k;render();window.scrollTo(0,0);break;
     case "noop":break;
+    case "edit-log":{const l=LOGS.find(x=>x.id===b.dataset.id);if(!l)break;
+      if(l.type==="session"){
+        if(session&&!session.editId&&confirmKey!=="edit-"+l.id){confirmKey="edit-"+l.id;toast("A session is in progress. Tap ✎ again to replace it.");render();break}
+        confirmKey=null;session=sessionFromLog(l);pick=null;tab="session";saveDraft()}
+      else if(l.type==="pullup"){puDraft=puDraftFromLog(l);tab="pullup"}
+      else if(l.type==="run"){runDraft={date:l.date,km:String(l.km??""),min:l.min==null?"":String(l.min),shin:!!l.shin,note:l.note||"",editId:l.id,editTs:l.ts};tab="run"}
+      moreSub=null;render();window.scrollTo(0,0);break}
+    case "pu-back":if(puDraft&&puDraft.editId)puDraft=null;tab=session?"session":"today";render();window.scrollTo(0,0);break;
+    case "run-back":runDraft={date:today(),km:"",min:"",shin:false,note:""};tab="today";render();window.scrollTo(0,0);break;
     case "prog-from-session":{const d=PROGRAMS.days.find(x=>x.name===session.day)||PROGRAMS.days.find(x=>x.split===session.split);progDay=d.id;progFrom=true;pick=null;tab="more";moreSub="program";render();window.scrollTo(0,0);break}
     case "back-session":progFrom=false;tab="session";render();window.scrollTo(0,0);break;
     case "prog-nav":progNav(+b.dataset.d);break;
@@ -1063,18 +1119,18 @@ document.addEventListener("click",async e=>{
     case "rest":startTimer(+b.dataset.s,"Rest");break;
     case "hold-timer":startTimer(+b.dataset.s,"Hold");break;
     case "start":if(session&&confirmKey!=="start"){confirmKey="start";toast("A session is in progress. Tap Start again to replace it.");break}confirmKey=null;sheet=false;session=newSession(b.dataset.k);tab="session";saveDraft();render();window.scrollTo(0,0);break;
-    case "cancel-session":if(confirmKey==="cancel"){session=null;confirmKey=null;tab="today";try{localStorage.removeItem("hybrid-ppl-draft")}catch{};render()}else{confirmKey="cancel";render()}break;
+    case "cancel-session":if(confirmKey==="cancel"||session.editId){session=null;confirmKey=null;tab="today";try{localStorage.removeItem("hybrid-ppl-draft")}catch{};render()}else{confirmKey="cancel";render()}break;
     case "set-done":{const st=session.slots[b.dataset.slot].sets[+b.dataset.i];st.done=!st.done;saveDraft();render();break}
     case "set-rm":{session.slots[b.dataset.slot].sets.splice(+b.dataset.i,1);saveDraft();render();break}
     case "add-set":{const st=session.slots[b.dataset.slot];st.sets.push({w:"",r:"",s:"",done:false});saveDraft();render();break}
     case "skill-test":{const k=b.dataset.k,v=num($("#test-"+k).value);if(!v){toast("Enter your hold in seconds");break}
       await saveTest(k,v);session.slots[b.dataset.slot]=makeSlot({skill:k});saveDraft();render();toast(`Saved. Target: ${holdCount(k)} × ${holdTarget(k)} s`);break}
-    case "finish":await finishSession();break;
+    case "finish":if(confirmKey!=="finish"){confirmKey="finish";render();break}confirmKey=null;await finishSession();break;
     case "pu-open":tab="pullup";render();window.scrollTo(0,0);break;
     case "pu-den-done":{const s=puDraft.sets[+b.dataset.i];s.done=!s.done;render();if(s.done)startTimer(60,"Rest");break}
     case "pu-pyr-clean":{const x=puDraft.ladders[+b.dataset.i];x.clean=!x.clean;render();break}
     case "pu-pyr-done":{const x=puDraft.ladders[+b.dataset.i];x.done=!x.done;render();break}
-    case "pu-save":await savePullups();break;
+    case "pu-save":{const c=puCount(puDraft);if(c.n<c.t&&confirmKey!=="pu-save"){confirmKey="pu-save";render();break}confirmKey=null;await savePullups();break}
     case "pu-adj":{const f=b.dataset.f;S.pu[f]=Math.max(1,S.pu[f]+ +b.dataset.d);puDraft=null;saveState();render();break}
     case "pu-next":S.pu.next=b.dataset.k;puDraft=null;saveState();render();break;
     case "home":await toggleHome(b.dataset.k);break;
@@ -1089,7 +1145,7 @@ document.addEventListener("click",async e=>{
       render();toast(cur?"Record saved, hold target updated":"Record saved");break}
     case "run-shin":runDraft.shin=!runDraft.shin;render();break;
     case "run-save":{const km=num(runDraft.km);if(!km){toast("Enter the distance");break}
-      await putLog({id:uid(),type:"run",date:runDraft.date||today(),ts:Date.parse((runDraft.date||today())+"T12:00:00"),km,min:num(runDraft.min),shin:runDraft.shin,note:runDraft.note.trim()});
+      await putLog({id:runDraft.editId||uid(),type:"run",date:runDraft.date||today(),ts:Date.parse((runDraft.date||today())+"T12:00:00"),km,min:num(runDraft.min),shin:runDraft.shin,note:runDraft.note.trim()});
       runDraft={date:today(),km:"",min:"",shin:false,note:""};tab="today";render();window.scrollTo(0,0);toast("Run saved");break}
     case "del":{const id=b.dataset.id;if(confirmKey==="del-"+id){confirmKey=null;const dl=LOGS.find(x=>x.id===id);await delLog(id);if(dl&&dl.type==="test"){const sk=Object.keys(SKILLS).find(x=>SKILLS[x].name===dl.skill);if(sk)setSkillLevel(sk,S.skills[sk].level)}render()}else{confirmKey="del-"+id;render()}break}
     case "export":showExport=!showExport;render();break;
@@ -1109,7 +1165,7 @@ function setSkillLevel(k,i){
   sk.baseline=r?r.s:null;sk.target=r?Math.max(2,Math.round(r.s*.7)):null;saveState();
 }
 function freshStart(){
-  S=clone(DEFAULT_STATE);LOGS=clone(SEED_LOGS);migrate();S.flags.freshAsked=true;sortLogs();
+  S=clone(DEFAULT_STATE);S.flags={backfill1021:true};LOGS=clone(SEED_LOGS);migrate();S.flags.freshAsked=true;sortLogs();
   session=null;puDraft=null;confirmKey=null;try{localStorage.removeItem("hybrid-ppl-draft")}catch{}
   lsSet(LKEY,{state:S,logs:LOGS});tab="today";moreSub=null;calOff=0;selDay=null;render();window.scrollTo(0,0);toast("Fresh start. Pull-up history kept.");
 }
@@ -1131,7 +1187,7 @@ async function toggleHome(id){
   h.done=h.done.includes(id)?h.done.filter(x=>x!==id):[...h.done,id];await putLog(h);render();
 }
 async function finishSession(){
-  const k=session.split,items=[];let msgs=[];
+  const k=session.split,items=[],ed=!!session.editId;let msgs=[];
   for(const id of session.order){
     const st=session.slots[id],df=st.def;
     if(df.skill){
@@ -1139,7 +1195,7 @@ async function finishSession(){
       const holds=st.sets.filter(s=>s.done).map(s=>num(s.s)||0);if(!holds.length)continue;
       const sk=S.skills[df.skill],t=holdTarget(df.skill);
       items.push({slot:df.key,ex:st.ex,kind:"hold",sets:holds.map(s=>({s}))});
-      if(holds.length>=st.sets.length&&holds.every(h=>h>=t)){sk.target=t+1;msgs.push(`${SKILLS[df.skill].name} target → ${t+1} s`)}
+      if(!ed&&holds.length>=st.sets.length&&holds.every(h=>h>=t)){sk.target=t+1;msgs.push(`${SKILLS[df.skill].name} target → ${t+1} s`)}
       if(Math.max(...holds)>sk.baseline)sk.baseline=Math.max(...holds);
       continue;
     }
@@ -1151,27 +1207,28 @@ async function finishSession(){
     if(df.key==="tah"){const m=Math.max(0,...st.sets.map(x=>num(x.s)||0));if(m>(S.hang.two||0)){S.hang.two=m;(S.hang.d=S.hang.d||{}).two=today()}}
   }
   if(!items.length){toast("Log at least one set before finishing");return}
-  await putLog({id:uid(),type:"session",split:k,date:session.date,ts:Date.now(),min:Math.round((Date.now()-session.started)/60000),items});
-  S.nextSplit=ORDER[(ORDER.indexOf(k)+1)%3];saveState();
+  await putLog({id:ed?session.editId:uid(),type:"session",split:k,date:session.date,ts:ed?session.editTs:Date.now(),min:ed?session.editMin:Math.round((Date.now()-session.started)/60000),items});
+  if(!ed)S.nextSplit=ORDER[(ORDER.indexOf(k)+1)%3];saveState();
   session=null;try{localStorage.removeItem("hybrid-ppl-draft")}catch{};tab="today";render();window.scrollTo(0,0);
-  toast(["Session saved",...msgs].join(" · "));
+  toast([ed?"Changes saved":"Session saved",...msgs].join(" · "));
 }
 async function savePullups(){
-  const d=puDraft;let log={id:uid(),type:"pullup",date:today(),ts:Date.now(),day:d.day},msg="Saved";
+  const d=puDraft,pu0=d.editId?clone(S.pu):null;let log={id:d.editId||uid(),type:"pullup",date:d.editDate||today(),ts:d.editTs||Date.now(),day:d.day},msg=d.editId?"Changes saved":"Saved";
   if(d.day==="max"){const sets=d.sets.map(num).filter(v=>v!=null);if(sets.length<1){toast("Enter your sets");return}log.sets=sets;
     const half=Math.floor(sets[0]/2);if(half>S.pu.densityTarget)msg=`Saved. Half your max is ${half}; the rule keeps you at ${S.pu.densityTarget} until you complete 10 × ${S.pu.densityTarget}.`}
-  else if(d.day==="density"){const sets=d.sets.filter(s=>s.done||s.r!=="").map(s=>num(s.r)||0);if(!sets.length){toast("Tick your sets");return}
+  else if(d.day==="density"){const sets=d.sets.filter(s=>s.done).map(s=>num(s.r)||0);if(!sets.length){toast("Tick your sets");return}
     log.target=d.target;log.sets=sets;
     if(sets.length>=10&&sets.slice(0,10).every(r=>r>=d.target)){S.pu.densityTarget=d.target+1;msg=`All 10 done. Next density target: 10 × ${d.target+1}`}}
   else {const lad=d.ladders.filter(x=>x.done).map(x=>{const p=num(x.peak)||0;return{peak:p,reps:x.clean?p*p:null,clean:x.clean}});if(!lad.length){toast("Tick your ladders");return}
     lad.forEach(x=>{if(x.reps==null)x.reps=Math.round(x.peak*x.peak*.7)});log.ladders=lad;
     if(lad.length>=5&&lad.every(x=>x.clean&&x.peak>=d.peak)){S.pu.ladderPeak=d.peak+1;msg=`Five clean ladders. Next peak: ${d.peak+1}`}
     else if(lad.some(x=>!x.clean))log.note="Failed ladders are counted at about 70% of their full reps.";}
-  S.pu.next=PU_NEXT[d.day];await putLog(log);saveState();puDraft=null;tab=session?"session":"today";render();window.scrollTo(0,0);toast(msg);
+  if(d.editId)S.pu=pu0;else S.pu.next=PU_NEXT[d.day];
+  await putLog(log);saveState();puDraft=null;tab=session?"session":"today";render();window.scrollTo(0,0);toast(msg);
 }
 
 init();
-const APP_VERSION="v19"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v20"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
