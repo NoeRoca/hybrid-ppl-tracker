@@ -157,6 +157,12 @@ input[type=number],input[type=text],input[type=date],select,textarea{border:0;bo
 nav.tabs{background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:0}
 nav.tabs button{font-family:var(--body);font-weight:700;font-size:12px;letter-spacing:.04em}
 nav.tabs button.on{color:var(--ink);border-top-color:var(--accent)}
+.logitem{display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--line);padding:2px 0}
+.logitem:last-child{border-bottom:0}
+.logrow{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;background:none;border:0;padding:6px 0;text-align:left;color:var(--ink);font:inherit;cursor:pointer}
+.logtxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.logtxt b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logbody{display:flex;flex-direction:column;gap:8px;padding:0 0 10px 22px}
 .sheet>div{border-radius:24px 24px 0 0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 html.noscroll,html.noscroll body{overflow:hidden}
 .sheet button{touch-action:manipulation}
@@ -394,6 +400,7 @@ function puLogTotal(l){ if(l.day==="pyramid")return (l.ladders||[]).reduce((a,x)
 
 /* ================= VIEWS ================= */
 let session=migrateDraft(lsGet("hybrid-ppl-draft")), tab="today", puDraft=null, runDraft={date:today(),km:"",min:"",shin:false,note:""}, confirmKey=null, showExport=false;
+const openLog=new Set();
 let psub="overview", liftSel="", calOff=0, sheet=false, selDay=null, pick=null, moreSub=null, editHeight=false, progDay=null, progFrom=false;
 const TABS=[["today","Home"],["progress","Progress"],["more","More"]];
 const TITLES={today:"Home",progress:"Progress",more:"More",routine:"Home routine",run:"Log a run",pullup:"Pull-ups"};
@@ -831,16 +838,17 @@ function viewHome(){
 /* ---------- Skills ---------- */
 /* ---------- Log ---------- */
 function histCard(list,title){
-  const items=list.slice(0,80).map(l=>{
+  const items=list.slice(0,150).map(l=>{
     let c="--muted",title="",detail="";
     if(l.type==="session"){c=SPLITS[l.split].c;title=SPLITS[l.split].name;detail=(l.items||[]).map(i=>`${i.ex}: ${fmtSets(i)}`).join(" · ")}
-    else if(l.type==="pullup"){c="--pull";title="Pull-ups · "+PU_DAYS[l.day].name;detail=l.day==="pyramid"?l.ladders.map(x=>`${x.peak}${x.clean?"":"✗"}`).join(" / ")+` = ${puLogTotal(l)} reps`:`${l.sets.join(" · ")} = ${puLogTotal(l)} reps`;if(l.note)detail+=" · "+l.note}
+    else if(l.type==="pullup"){c="--pu";title="Pull-ups · "+PU_DAYS[l.day].name;detail=l.day==="pyramid"?l.ladders.map(x=>`${x.peak}${x.clean?"":"✗"}`).join(" / ")+` = ${puLogTotal(l)} reps`:`${l.sets.join(" · ")} = ${puLogTotal(l)} reps`;if(l.note)detail+=" · "+l.note}
     else if(l.type==="home"){c="--home";title="Home routine";detail=`${(l.done||[]).length}/${PROGRAM.home.length} done`}
     else if(l.type==="run"){c="--run";title=`Run · ${l.km} km`;detail=[l.min?`${l.min} min`:"",l.shin?"shins hurt":"",l.note||""].filter(Boolean).join(" · ")}
     else if(l.type==="rest"){c="--muted";title="Rest day"}
     else if(l.type==="weight"){c="--muted";title=`Weight · ${l.kg} kg`}
     else if(l.type==="test"){c="--muted";title=`Test · ${l.skill}`;detail=`${l.level}: ${l.seconds} s`}
-    return `<div class="logitem"><span class="dot" style="--c:var(${c})"></span><div style="min-width:0;flex:1"><div class="row between"><b>${esc(title)}</b><span class="muted small">${fmtDate(l.date)}${l.approx?" (approx.)":""}</span></div><div class="muted small" style="overflow-wrap:anywhere">${esc(detail)}</div></div>${["session","pullup","run"].includes(l.type)?`<button class="btn sm ghost" data-a="edit-log" data-id="${l.id}" aria-label="Edit entry">✎</button>`:""}${l.seed||l.id.startsWith("seed")?"":`<button class="btn sm ghost" data-a="del" data-id="${l.id}" aria-label="Delete entry">${confirmKey==="del-"+l.id?"Confirm":"✕"}</button>`}</div>`}).join("<hr>");
+    const open=openLog.has(l.id),canEdit=["session","pullup","run"].includes(l.type),canDel=!(l.seed||String(l.id).startsWith("seed"));
+    return `<div class="logitem"><button class="logrow" data-a="log-toggle" data-id="${l.id}" aria-expanded="${open}"><span class="dot" style="--c:var(${c})"></span><span class="logtxt"><b>${esc(title)}</b><span class="muted small">${fmtDate(l.date)}${l.approx?" (approx.)":""}</span></span><span class="muted">${open?"▾":"▸"}</span></button>${open?`<div class="logbody">${detail?`<div class="muted small" style="overflow-wrap:anywhere">${esc(detail)}</div>`:""}<div class="row">${canEdit?`<button class="btn sm" data-a="edit-log" data-id="${l.id}">Edit</button>`:""}${canDel?`<button class="btn sm ghost" data-a="del" data-id="${l.id}">${confirmKey==="del-"+l.id?"Tap again to delete":"Delete"}</button>`:""}${!canEdit&&!canDel?'<span class="muted small">Notes-based history, cannot be deleted.</span>':""}</div></div>`:""}</div>`}).join("");
   return `<section class="card"><span class="eyebrow">${title}</span>${items||'<p class="muted">Nothing logged yet.</p>'}</section>`;
 }
 function runCard(){
@@ -1074,6 +1082,7 @@ document.addEventListener("click",async e=>{
   switch(a){
     case "tab":progFrom=false;sheet=false;if(b.dataset.k==="more")moreSub=null;tab=b.dataset.k;render();window.scrollTo(0,0);break;
     case "noop":break;
+    case "log-toggle":{const id=b.dataset.id;openLog.has(id)?openLog.delete(id):openLog.add(id);render();break}
     case "edit-log":{const l=LOGS.find(x=>x.id===b.dataset.id);if(!l)break;
       if(l.type==="session"){
         if(session&&!session.editId&&confirmKey!=="edit-"+l.id){confirmKey="edit-"+l.id;toast("A session is in progress. Tap ✎ again to replace it.");render();break}
@@ -1228,7 +1237,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v20"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v21"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
