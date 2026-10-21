@@ -168,6 +168,7 @@ html.noscroll,html.noscroll body{overflow:hidden}
 .sheet button{touch-action:manipulation}
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .stat{background:var(--sunk);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:2px}
+.nums{text-align:right;font-variant-numeric:tabular-nums;letter-spacing:.04em;word-spacing:.15em;line-height:1.6}
 .stat b{font:800 26px/1.1 var(--display);letter-spacing:-.02em}
 .badge{font-weight:800;font-size:13px;padding:2px 8px;border-radius:99px;background:var(--sunk)}
 .badge.E{color:var(--ok)}.badge.J{color:var(--muted)}
@@ -776,11 +777,21 @@ function anOverview(){
     ${rows.length?rows.map(c=>`<div class="stack" style="gap:4px"><div class="row between"><span>${esc(c)}</span><span class="small"><b>${cats[c].now}</b> <span class="muted">· avg ${Math.round(cats[c].prev*10)/10}</span></span></div><div class="bar" style="height:8px"><i style="width:${Math.round(cats[c].now/mx*100)}%"></i></div><div class="bar" style="height:4px"><i style="width:${Math.round(cats[c].prev/mx*100)}%;background:var(--muted)"></i></div></div>`).join(""):'<div class="muted small">Finish a session to see this.</div>'}</section>
   <section class="card"><span class="eyebrow">Run km per week</span>${barChart(kw,{color:"var(--run)",label:"Run km per week"})}</section>`;
 }
+function puHistory(L){
+  const row=(l,txt)=>`<div class="row between" style="align-items:flex-start;gap:12px"><span class="muted small" style="flex:none;min-width:58px">${fmtDate(l.date).replace(/^\w+ /,"")}${l.approx?"*":""}</span><span class="nums">${txt}</span></div>`;
+  const sec=(name,day,fmt)=>{const rows=L.filter(l=>l.day===day).slice().reverse().map(l=>row(l,fmt(l)));return `<div class="stack" style="gap:8px"><b>${name}</b>${rows.length?rows.join(""):'<span class="muted small">None yet.</span>'}</div>`};
+  return `<section class="card"><span class="eyebrow">Every session</span>
+    ${sec("Max day","max",l=>{const m=Math.max(...l.sets);return l.sets.map(x=>x===m?`<b>${x}</b>`:x).join(" ")})}<hr>
+    ${sec("Density day","density",l=>l.sets.map(x=>x>=(l.target||0)?x:`<span class="muted">${x}</span>`).join(" "))}<hr>
+    ${sec("Pyramid day","pyramid",l=>(l.ladders||[]).map(x=>x.clean===false?`<span class="muted">${x.peak}✗</span>`:x.peak).join(" ")+` <span class="muted small">· ${puLogTotal(l)}</span>`)}
+    <div class="muted small">Newest first. Density: grey = under the target. Pyramid: peak of each ladder, ✗ = failed a step, then total reps. * = approximate date.</div></section>`;
+}
 function anPullups(){
   const L=LOGS.filter(l=>l.type==="pullup").slice().sort((a,b)=>a.date<b.date?-1:1),hist=L.slice().reverse();
   const pts=(day,f)=>L.filter(l=>l.day===day).map(l=>({t:tsOf(l.date),y:f(l)})).filter(p=>p.y>0);
   const total=L.reduce((a,l)=>a+puLogTotal(l),0),bestMax=Math.max(0,...L.filter(l=>l.day==="max").map(l=>Math.max(0,...l.sets)));
   return `<section class="card"><span class="eyebrow">All time</span><div class="stats">${stat(L.length,"Pull-up days")}${stat(total,"Total reps")}${stat(bestMax||"–","Best max set")}${stat(S.pu.densityTarget,"Density target")}</div></section>
+  ${puHistory(L)}
   <section class="card"><span class="eyebrow">Total reps per session</span>${puChart(hist)}</section>
   <section class="card"><span class="eyebrow">Best set on max days</span>${lineChart(pts("max",l=>Math.max(0,...l.sets)),{unit:" reps",label:"Best set on max days"})}</section>
   <section class="card"><span class="eyebrow">Density target</span>${lineChart(pts("density",l=>+l.target||0),{color:"var(--pull)",label:"Density target"})}</section>
@@ -1237,7 +1248,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v21"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v22"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
