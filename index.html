@@ -719,7 +719,7 @@ function puChart(hist){
   let g="";
   rows.forEach((r,ri)=>{
     const y0=ri*rowH+8, vals=r.pts.map(puLogTotal), mx=Math.max(1,...vals);
-    g+=`<g data-a="pu-hist" data-k="${r.day}" style="cursor:pointer"><rect x="0" y="${y0-4}" width="${pad0-8}" height="${rowH-6}" fill="transparent"/><text x="0" y="${y0+22}" fill="var(--ink)" font-size="21" font-weight="600" font-family="-apple-system,system-ui,sans-serif" text-decoration="underline">${PU_DAYS[r.day].name.toUpperCase()} ›</text></g>`;
+    g+=`<g data-a="pu-hist" data-k="${r.day}" style="cursor:pointer"><rect x="0" y="${y0-4}" width="${pad0-8}" height="${rowH-6}" fill="transparent"/><text x="0" y="${y0+22}" fill="var(--ink)" font-size="21" font-weight="600" font-family="-apple-system,system-ui,sans-serif">${PU_DAYS[r.day].name.toUpperCase()}</text></g>`;
     g+=`<line x1="${pad0}" x2="${W}" y1="${y0+54}" y2="${y0+54}" stroke="var(--line)"/>`;
     if(!vals.length){g+=`<text x="${pad0}" y="${y0+40}" fill="var(--muted)" font-size="17">No sessions yet</text>`;return}
     const bw=Math.min(44,(W-pad0)/10-8);
@@ -795,7 +795,7 @@ function anPullups(){
   const pts=(day,f)=>L.filter(l=>l.day===day).map(l=>({t:tsOf(l.date),y:f(l)})).filter(p=>p.y>0);
   const total=L.reduce((a,l)=>a+puLogTotal(l),0),bestMax=Math.max(0,...L.filter(l=>l.day==="max").map(l=>Math.max(0,...l.sets)));
   return `<section class="card"><span class="eyebrow">All time</span><div class="stats">${stat(L.length,"Pull-up days")}${stat(total,"Total reps")}${stat(bestMax||"–","Best max set")}${stat(S.pu.densityTarget,"Density target")}</div></section>
-  <section class="card"><span class="eyebrow">Total reps per session</span>${puChart(L)}<div class="row" style="gap:6px;flex-wrap:wrap">${["max","density","pyramid"].map(k=>`<button class="btn sm" data-a="pu-hist" data-k="${k}">${PU_DAYS[k].name} ›</button>`).join("")}</div><div class="muted small">Tap a day type to see every session.</div></section>
+  <section class="card"><span class="eyebrow">Total reps per session</span>${puChart(L)}<div class="muted small">Tap a day type to see every session.</div></section>
   <section class="card"><span class="eyebrow">Best set on max days</span>${lineChart(pts("max",l=>Math.max(0,...l.sets)),{unit:" reps",int:true,label:"Best set on max days"})}</section>
   <section class="card"><span class="eyebrow">Density target</span>${lineChart(pts("density",l=>+l.target||0),{color:"var(--pull)",int:true,label:"Density target"})}</section>
   <section class="card"><span class="eyebrow">Pyramid peak</span>${lineChart(pts("pyramid",l=>Math.max(0,...(l.ladders||[]).map(x=>+x.peak||0))),{color:"var(--home)",int:true,label:"Pyramid peak"})}</section>`;
@@ -1252,7 +1252,7 @@ async function savePullups(){
 }
 
 init();
-const APP_VERSION="v23"; // keep in sync with VERSION in sw.js
+const APP_VERSION="v24"; // keep in sync with VERSION in sw.js
 let hiddenAt=0;
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   let had=!!navigator.serviceWorker.controller, reloading=false;
